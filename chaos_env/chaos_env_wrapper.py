@@ -103,17 +103,32 @@ def run_oracle_step(
     T_ver: Dict[Tuple[str, str], Dict[str, int]],
     global_seed: int,
     out_step_dir: Path,
-    prev_state: str,
-    prev_action: Optional[str],
-    state_vocab: List[str],
+    prev_state: Optional[str] = None,
+    prev_action: Optional[str] = None,
+    state_vocab: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
     out_step_dir.mkdir(parents=True, exist_ok=True)
+    if prev_state is None:
+        prev_state = str(red_packet.get("prev_state", red_packet.get("state", "")))
+    if prev_action is None:
+        prev_action = red_packet.get("prev_action", None)
+    if state_vocab is None:
+        state_vocab = list(red_packet.get("state_vocab", ["1,1","1,2","9,9"]))
+
 
     step_counter = int(red_packet["step_counter"])
     actions = list(red_packet["actions"])
     seeds = derive_seeds(global_seed, step_counter)
 
-    percept_contract: PerceptContractV1 = contracts["percept_contract"]
+    percept_contract: PerceptContractV1 = contracts.get(
+    "percept_contract",
+    PerceptContractV1(
+        n_views=3,
+        agree_k=2,
+        require_temporal=(prev_action is not None),
+        require_state_format=True,
+    ),
+)
     observation = red_packet.get("observation", {"raw": "MISSING"})
     proposed_state = str(red_packet.get("proposed_state", prev_state))
 
