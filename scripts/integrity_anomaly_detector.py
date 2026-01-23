@@ -36,12 +36,26 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List, Set, Tuple
 
 
+def sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
 def sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def canonical_json_bytes(obj) -> bytes:
+    return json.dumps(
+        obj,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
 
 
 def list_step_dirs(stream_root: str) -> List[str]:
@@ -112,8 +126,24 @@ DEFAULT_CONTRACT = Contract(
     exec_change_steps={1},
     risk_period=25,
     risk_pulse_mods={0, 1},
-    risk_min_step=1,
+    risk_min_step=25,
 )
+
+
+def contract_dict(c: Contract) -> dict:
+    return {
+        "always_change": sorted(list(c.always_change)),
+        "value_change": sorted(list(c.value_change)),
+        "percept_change_steps": sorted(list(c.percept_change_steps)),
+        "exec_change_steps": sorted(list(c.exec_change_steps)),
+        "risk_period": c.risk_period,
+        "risk_pulse_mods": sorted(list(c.risk_pulse_mods)),
+        "risk_min_step": c.risk_min_step,
+    }
+
+
+def contract_sha256(contract_obj: dict) -> str:
+    return sha256_bytes(canonical_json_bytes(contract_obj))
 
 
 @dataclass
@@ -137,6 +167,9 @@ class Report:
     last_step: int
     anomalies_found: int
     contract: dict
+    contract_sha256: str
+    detector_path: str
+    detector_sha256: str
     diffs_with_anomalies: List[StepDiff]
 
 
@@ -229,21 +262,22 @@ def main():
         prev_step = step
         prev_hashes = cur_hashes
 
+    cdict = contract_dict(DEFAULT_CONTRACT)
+    csha = contract_sha256(cdict)
+
+    detector_path = os.path.abspath(__file__)
+    dsha = sha256_file(detector_path)
+
     rep = Report(
         stream_root=stream_root,
         num_steps_scanned=len(step_dirs),
         first_step=step_id_from_dir(step_dirs[0]),
         last_step=step_id_from_dir(step_dirs[-1]),
         anomalies_found=anomalies_count,
-        contract={
-            "always_change": sorted(list(DEFAULT_CONTRACT.always_change)),
-            "value_change": sorted(list(DEFAULT_CONTRACT.value_change)),
-            "percept_change_steps": sorted(list(DEFAULT_CONTRACT.percept_change_steps)),
-            "exec_change_steps": sorted(list(DEFAULT_CONTRACT.exec_change_steps)),
-            "risk_period": DEFAULT_CONTRACT.risk_period,
-            "risk_pulse_mods": sorted(list(DEFAULT_CONTRACT.risk_pulse_mods)),
-            "risk_min_step": DEFAULT_CONTRACT.risk_min_step,
-        },
+        contract=cdict,
+        contract_sha256=csha,
+        detector_path=detector_path,
+        detector_sha256=dsha,
         diffs_with_anomalies=anomalies,
     )
 
@@ -254,11 +288,15 @@ def main():
     if anomalies_count == 0:
         print("PASS_INTEGRITY_ANOMALY_DETECTOR")
         print(f"WROTE: {args.report_path}")
+        print(f"contract_sha256={csha}")
+        print(f"detector_sha256={dsha}")
         return
 
     print("FAIL_INTEGRITY_ANOMALY_DETECTOR")
     print(f"anomalies_found={anomalies_count}")
     print(f"WROTE: {args.report_path}")
+    print(f"contract_sha256={csha}")
+    print(f"detector_sha256={dsha}")
 
     for i, a in enumerate(anomalies[:10]):
         print(f"\n--- anomaly[{i}] step={a.step} prev={a.prev_step} ---")
