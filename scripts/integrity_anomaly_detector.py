@@ -169,6 +169,8 @@ class StepDiff:
 class Report:
     stream_root: str
     num_steps_scanned: int
+    scan_first_chain_root_sha256: str
+    scan_last_chain_root_sha256: str
     first_step: int
     last_step: int
     anomalies_found: int
@@ -268,6 +270,11 @@ def main():
         prev_step = step
         prev_hashes = cur_hashes
 
+    first_chain_root_path = os.path.join(step_dirs[0], "chain_root.txt")
+    scan_first_chain_root_sha256 = sha256_file(first_chain_root_path) if os.path.isfile(first_chain_root_path) else ""
+    last_chain_root_path = os.path.join(step_dirs[-1], "chain_root.txt")
+    scan_last_chain_root_sha256 = sha256_file(last_chain_root_path) if os.path.isfile(last_chain_root_path) else ""
+
     cdict = contract_dict(DEFAULT_CONTRACT)
     csha = contract_sha256(cdict)
 
@@ -277,6 +284,8 @@ def main():
     rep = Report(
         stream_root=stream_root,
         num_steps_scanned=len(step_dirs),
+        scan_first_chain_root_sha256=scan_first_chain_root_sha256,
+        scan_last_chain_root_sha256=scan_last_chain_root_sha256,
         first_step=step_id_from_dir(step_dirs[0]),
         last_step=step_id_from_dir(step_dirs[-1]),
         anomalies_found=anomalies_count,
@@ -296,6 +305,10 @@ def main():
         print(f"WROTE: {args.report_path}")
         print(f"contract_sha256={csha}")
         print(f"detector_sha256={dsha}")
+    print(f"scan_first_chain_root_sha256={scan_first_chain_root_sha256}")
+    print(f"scan_last_chain_root_sha256={scan_last_chain_root_sha256}")
+        print(f"scan_first_chain_root_sha256={scan_first_chain_root_sha256}")
+        print(f"scan_last_chain_root_sha256={scan_last_chain_root_sha256}")
         return
 
     print("FAIL_INTEGRITY_ANOMALY_DETECTOR")
@@ -303,6 +316,8 @@ def main():
     print(f"WROTE: {args.report_path}")
     print(f"contract_sha256={csha}")
     print(f"detector_sha256={dsha}")
+    print(f"scan_first_chain_root_sha256={scan_first_chain_root_sha256}")
+    print(f"scan_last_chain_root_sha256={scan_last_chain_root_sha256}")
 
     for i, a in enumerate(anomalies[:10]):
         print(f"\n--- anomaly[{i}] step={a.step} prev={a.prev_step} ---")
