@@ -1,11 +1,15 @@
 import json
 from pathlib import Path
 
-from scripts.verify_bundle import hash_canon, merkle_root_from_leaf_hashes, verify_step_dir
+from scripts.verify_bundle import verify_step_dir
+from scripts.verify_audit_chain import canon_hash, merkle_root
 
 
 def _dump(p: Path, x) -> None:
-    p.write_text(json.dumps(x, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False), encoding="utf-8")
+    p.write_text(
+        json.dumps(x, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False),
+        encoding="utf-8",
+    )
 
 
 def test_verify_bundle_replay_pass(tmp_path: Path):
@@ -24,17 +28,20 @@ def test_verify_bundle_replay_pass(tmp_path: Path):
     _dump(step_dir / "w_risk.json", w_risk)
     _dump(step_dir / "w_exec.json", w_exec)
 
-    leaf_hashes = [
-        hash_canon(w_percept),
-        hash_canon(w_model),
-        hash_canon(w_value),
-        hash_canon(w_risk),
-        hash_canon(w_exec),
+    leaves = [
+        ("percept", canon_hash(w_percept)),
+        ("model_contract", canon_hash(w_model)),
+        ("value_table", canon_hash(w_value)),
+        ("risk_gate", canon_hash(w_risk)),
+        ("exec", canon_hash(w_exec)),
     ]
-    root = merkle_root_from_leaf_hashes(leaf_hashes)
+
+    root = merkle_root([h for _, h in leaves])
 
     bundle = {
+        "schema": "oracle.bundle.v1",
         "merkle_root": root,
+        "leaves": [{"name": n, "hash": h} for n, h in leaves],
         "leaf_verdicts": {
             "percept": "PASS",
             "model_contract": "PASS",
@@ -42,9 +49,11 @@ def test_verify_bundle_replay_pass(tmp_path: Path):
             "risk_gate": "PASS",
             "exec": "PASS",
         },
+        "verdict": "PASS",
     }
+
     _dump(step_dir / "bundle.json", bundle)
-    (step_dir / "root_hash.txt").write_text(root, encoding="utf-8")
+    (step_dir / "root_hash.txt").write_text(root + "\n", encoding="utf-8")
 
     out = verify_step_dir(str(step_dir))
     assert out["ok"] is True
