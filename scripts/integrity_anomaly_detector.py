@@ -305,8 +305,6 @@ def main():
         print(f"WROTE: {args.report_path}")
         print(f"contract_sha256={csha}")
         print(f"detector_sha256={dsha}")
-    print(f"scan_first_chain_root_sha256={scan_first_chain_root_sha256}")
-    print(f"scan_last_chain_root_sha256={scan_last_chain_root_sha256}")
         print(f"scan_first_chain_root_sha256={scan_first_chain_root_sha256}")
         print(f"scan_last_chain_root_sha256={scan_last_chain_root_sha256}")
         return
