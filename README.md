@@ -221,6 +221,24 @@ This gives you a ledger property:
 - you can verify replays
 - you can diff two runs by comparing roots
 
+
+### 6.1 Stream integrity auditing (Ghost File Detector)
+Beyond proving **Red → Blue correctness**, this repo also audits the **proof stream itself** for unexpected file drift.
+
+`scripts/integrity_anomaly_detector.py` scans `out/stream/step_*` and flags:
+- unexpected changed files (ghost writes)
+- missing expected changes (silent failures)
+- new files appearing / files disappearing
+- forbidden phase changes (e.g., risk/percept/exec changing outside allowed windows)
+
+It writes:
+- `out/stream/integrity_anomaly_report.json`
+
+The report is stamped so it cannot be modified without leaving a witness trail:
+- `contract_sha256` (hash of the integrity contract)
+- `detector_sha256` (hash of the detector script)
+- `scan_first_chain_root_sha256` / `scan_last_chain_root_sha256` (chain head/tail anchors for the scanned window)
+
 ---
 
 ## 7) Requirements
@@ -262,6 +280,19 @@ jq -r '{prev_state,selected_action,observed_next_state,exec_verdict,leaf_verdict
 jq -r '{verdict,checks,inputs}' "$d/w_model_contract.json"
 ```
 
+
+### 10.1 Verify stream integrity (Ghost File Detector)
+```bash
+python3 scripts/integrity_anomaly_detector.py \
+  --stream-root out/stream \
+  --max-steps 200 \
+  --report-path out/stream/integrity_anomaly_report.json \
+  --fail-on-any
+
+jq -r "{anomalies_found,contract_sha256,detector_sha256,scan_first_chain_root_sha256,scan_last_chain_root_sha256}" \
+  out/stream/integrity_anomaly_report.json
+```
+
 ---
 
 ## 11) What this looks like at scale
@@ -274,14 +305,4 @@ Same structure, larger numbers:
 
 ---
 
-## 12) What’s next
-1. Freeze explicit schemas (`red_packet.v1`, `bundle.v1`)
-2. Canonical hashing + replay verifier tool
-3. Richer environment + multi-step skills
-4. In-process proposer loop (still Red/Blue separated)
-5. CI replay tests (stable roots, no nondeterminism)
-
----
-
-## 13) License
-MUI.
+6. Stream integrity contract + CI gate (stream must PASS anomaly detector)
