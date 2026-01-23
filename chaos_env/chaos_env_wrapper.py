@@ -117,7 +117,8 @@ def run_oracle_step(
 
 
     step_counter = int(red_packet["step_counter"])
-    actions = list(red_packet["actions"])
+    actions_full = list(red_packet["actions"])
+    actions = list(actions_full)
     seeds = derive_seeds(global_seed, step_counter)
 
     percept_contract: PerceptContractV1 = contracts.get(
@@ -166,6 +167,7 @@ def run_oracle_step(
 
     model_contract: ModelContractV1 = contracts["model_contract"]
     abstain_action = contracts["risk_contract"].abstain_action
+    model_action = next((a for a in actions_full if a != abstain_action), abstain_action)
 
     a_row = next((a for a in actions if a != abstain_action), actions[0])
 
@@ -182,8 +184,8 @@ def run_oracle_step(
     reward_table = parse_reward_table(red_packet.get("reward_table", {}))
     violation_states = list(red_packet.get("violation_states", []))
 
-    if w_model_contract["verdict"] == "PASS":
-        T_ver[(s_t, a_row)] = w_model_contract["candidate_int_mass"]
+    if w_model_contract["verdict"] == "PASS" and model_action != abstain_action:
+        T_ver[(s_t, model_action)] = w_model_contract["candidate_int_mass"]
 
     verified_q: Dict[str, float] = {}
     verified_r: Dict[str, float] = {}

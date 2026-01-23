@@ -78,7 +78,10 @@ def risk_gate_select_action(
     if safe_nonempty:
         best_q = max(q_int[a] for a in safe_actions)
         best_safe = [a for a in safe_actions if q_int[a] == best_q]
-        selected_action = sorted(best_safe)[0]
+        if proposed_action is not None and proposed_action in best_safe:
+            selected_action = proposed_action
+        else:
+            selected_action = sorted(best_safe)[0]
     else:
         selected_action = contract.abstain_action
 

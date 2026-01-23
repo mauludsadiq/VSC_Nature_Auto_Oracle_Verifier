@@ -104,7 +104,13 @@ def dump_csv_row(csv_path: Path, row: Dict[str, str]) -> None:
 
 def load_red_packet(inbox: Path, k: int) -> Dict:
     p = inbox / f"proposal_step_{k}.json"
-    return json.loads(p.read_text(encoding="utf-8"))
+    d = json.loads(p.read_text(encoding="utf-8"))
+    if "observation" not in d:
+        st = str(d.get("state", d.get("prev_state", "")))
+        d["observation"] = {"raw": f"pos={st}"}
+    if "proposed_state" not in d:
+        d["proposed_state"] = str(d.get("state", d.get("prev_state", "")))
+    return d
 
 
 
@@ -121,7 +127,7 @@ def main():
     skills = {
         "MOVE_RIGHT": SkillSpecV1(
             name="MOVE_RIGHT",
-            pre_states=["1,1"],
+            pre_states=["1,1","1,2"],
             post_states=["1,2"],
             allowed_subactions=["MOVE_RIGHT"],
             max_trace_len=2
