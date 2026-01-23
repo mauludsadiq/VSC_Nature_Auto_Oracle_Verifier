@@ -83,6 +83,7 @@ class Contract:
     always_change: Set[str]
     value_change: Set[str]
     percept_change_steps: Set[int]
+    risk_change_steps: Set[int]
     exec_change_steps: Set[int]
     risk_period: int
     risk_pulse_mods: Set[int]
@@ -99,6 +100,9 @@ class Contract:
         if step in self.exec_change_steps:
             exp.add("w_exec.json")
 
+        if step in self.risk_change_steps:
+            exp.add("w_risk.json")
+
         if step >= self.risk_min_step and (step % self.risk_period) in self.risk_pulse_mods:
             exp.add("w_risk.json")
 
@@ -113,7 +117,7 @@ class Contract:
         if step not in self.exec_change_steps:
             forbid.add("w_exec.json")
 
-        if not (step >= self.risk_min_step and (step % self.risk_period) in self.risk_pulse_mods):
+        if not (step in self.risk_change_steps) and not (step >= self.risk_min_step and (step % self.risk_period) in self.risk_pulse_mods):
             forbid.add("w_risk.json")
 
         return forbid
@@ -124,6 +128,7 @@ DEFAULT_CONTRACT = Contract(
     value_change={"w_value.json", "w_value_ABSTAIN.json", "w_value_MOVE_RIGHT.json"},
     percept_change_steps={1, 2},
     exec_change_steps={1},
+    risk_change_steps={1},
     risk_period=25,
     risk_pulse_mods={0, 1},
     risk_min_step=25,
@@ -136,6 +141,7 @@ def contract_dict(c: Contract) -> dict:
         "value_change": sorted(list(c.value_change)),
         "percept_change_steps": sorted(list(c.percept_change_steps)),
         "exec_change_steps": sorted(list(c.exec_change_steps)),
+        "risk_change_steps": sorted(list(c.risk_change_steps)),
         "risk_period": c.risk_period,
         "risk_pulse_mods": sorted(list(c.risk_pulse_mods)),
         "risk_min_step": c.risk_min_step,
