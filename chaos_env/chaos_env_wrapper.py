@@ -121,16 +121,27 @@ def run_oracle_step(
     seeds = derive_seeds(global_seed, step_counter)
 
     percept_contract: PerceptContractV1 = contracts.get(
-    "percept_contract",
-    PerceptContractV1(
-        n_views=3,
-        agree_k=2,
-        require_temporal=(prev_action is not None),
-        require_state_format=True,
-    ),
-)
-    observation = red_packet.get("observation", {"raw": "MISSING"})
-    proposed_state = str(red_packet.get("proposed_state", prev_state))
+        "percept_contract",
+        PerceptContractV1(
+            n_views=3,
+            agree_k=2,
+            require_temporal=(prev_action is not None),
+            require_state_format=True,
+        ),
+    )
+
+    s_raw = str(red_packet.get("state", prev_state))
+    observation = red_packet.get("observation", None)
+    if observation is None:
+        observation = {"raw": f"pos={s_raw}"}
+
+    proposed_state = red_packet.get("proposed_state", None)
+    if proposed_state is None:
+        mr = red_packet.get("model_row_proposal", None)
+        if isinstance(mr, list) and len(mr) > 0 and isinstance(mr[0], (list, tuple)) and len(mr[0]) >= 1:
+            proposed_state = str(mr[0][0])
+        else:
+            proposed_state = s_raw
 
     w_percept = verify_percept_proposal(
         contract=percept_contract,
