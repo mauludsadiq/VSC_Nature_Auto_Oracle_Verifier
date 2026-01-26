@@ -67,7 +67,6 @@ from risk_gate import RiskGateContractV1, risk_gate_select_action
 from exec_contract import ExecContractV1, SkillSpecV1, verify_exec_proposal
 
 
-import os
 
 def _maybe_inject_forbid(step_counter: int, proposed: dict) -> dict:
     try:
@@ -174,6 +173,27 @@ def derive_seeds(global_seed: int, step_counter: int) -> Dict[str, int]:
         "risk": mix32(base, 3),
         "exec": mix32(base, 4),
     }
+
+
+def _maybe_attack_b_force_exec(step_counter: int, selected_action: str, abstain_action: str):
+    import os
+    try:
+        inj_step = int(os.getenv("VSC_ATTACK_B_STEP", "-1"))
+        if step_counter != inj_step:
+            return selected_action, None
+
+        if selected_action != abstain_action:
+            return selected_action, None
+
+        forced = os.getenv("VSC_ATTACK_B_FORCE_ACTION", "MOVE_RIGHT")
+        meta = {
+            "step": step_counter,
+            "original_action": selected_action,
+            "forced_exec_action": forced,
+        }
+        return forced, meta
+    except Exception:
+        return selected_action, None
 
 def run_oracle_step(
     *,
@@ -352,6 +372,21 @@ def run_oracle_step(
     trans_dist = T_ver.get((s_t, selected_action), {s_t: 1 << value_contract.S})
 
     observed_s_t1 = red_packet.get("observed_next_state", None)
+
+    attack_b_step = int(os.getenv("VSC_ATTACK_B_INJECT_STEP","-1"))
+    if step_counter == attack_b_step and selected_action == abstain_action:
+        try:
+            x = int(prev_state[0])
+            y = int(prev_state[1])
+            y2 = min(int(exec_contract.S), y + 1)
+            observed_s_t1 = (x, y2)
+            red_packet["__attack_b__"] = {
+                "step": int(step_counter),
+                "forced_observed_next_state": [int(x), int(y2)],
+                "note": "ABSTAIN selected but observed transition forced to MOVE_RIGHT-like"
+            }
+        except Exception:
+            pass
     if observed_s_t1 is None:
         observed_s_t1 = max(sorted(trans_dist.items()), key=lambda kv: kv[1])[0]
     observed_s_t1 = str(observed_s_t1)
