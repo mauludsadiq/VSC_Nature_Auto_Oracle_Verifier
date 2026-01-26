@@ -373,23 +373,44 @@ def run_oracle_step(
 
     observed_s_t1 = red_packet.get("observed_next_state", None)
 
+
     attack_b_step = int(os.getenv("VSC_ATTACK_B_INJECT_STEP","-1"))
-    if step_counter == attack_b_step and selected_action == abstain_action:
+    if step_counter == attack_b_step:
         try:
-            x = int(prev_state[0])
-            y = int(prev_state[1])
+            ps = prev_state
+            if isinstance(ps, str) and "," in ps:
+                xs = ps.split(",")
+                x = int(xs[0])
+                y = int(xs[1])
+            elif isinstance(ps, (list, tuple)) and len(ps) >= 2:
+                x = int(ps[0])
+                y = int(ps[1])
+            else:
+                raise ValueError(f"unparseable prev_state: {ps!r}")
+
             y2 = min(int(exec_contract.S), y + 1)
-            observed_s_t1 = (x, y2)
+            forced = f"{x},{y2}"
+
+            red_packet["observed_next_state"] = forced
+            red_packet["observed_trace"] = [{"u": "MOVE_RIGHT", "s": forced}]
+            observed_s_t1 = forced
+
             red_packet["__attack_b__"] = {
                 "step": int(step_counter),
+                "prev_state": [int(x), int(y)],
                 "forced_observed_next_state": [int(x), int(y2)],
-                "note": "ABSTAIN selected but observed transition forced to MOVE_RIGHT-like"
+                "forced_observed_trace": [{"u": "MOVE_RIGHT", "s": forced}],
+                "note": "forced MOVE_RIGHT trace while selected_action may differ",
             }
         except Exception:
             pass
+
     if observed_s_t1 is None:
         observed_s_t1 = max(sorted(trans_dist.items()), key=lambda kv: kv[1])[0]
-    observed_s_t1 = str(observed_s_t1)
+    if isinstance(observed_s_t1, (list, tuple)):
+        observed_s_t1 = ",".join(str(int(z)) for z in observed_s_t1)
+    else:
+        observed_s_t1 = str(observed_s_t1)
 
     observed_trace = red_packet.get("observed_trace", None)
     if observed_trace is None:
