@@ -206,15 +206,49 @@ def _summarize_value_action(name: str, w: Dict[str, Any]) -> str:
     return "  " + " ".join(parts)
 
 
-def _print_value_table(pack: Dict[str, Any]) -> None:
+def _print_value_table(
+    pack: Dict[str, Any],
+    only_selected: bool,
+    include_abstain: bool,
+    selected_action: Any,
+    force_show_fail: bool,
+) -> None:
     print("[value_table]")
     value_actions = pack.get("value_actions", [])
+
+    if only_selected:
+        keep: List[Tuple[str, Dict[str, Any]]] = []
+        for fname, w in value_actions:
+            act = fname
+            if act.startswith("w_value_"):
+                act = act[len("w_value_"):]
+            if act.endswith(".json"):
+                act = act[:-len(".json")]
+
+            wv = _g(w, "verdict", "")
+            wv_u = str(wv).upper()
+
+            show = False
+            if selected_action is not None and act == str(selected_action):
+                show = True
+            if include_abstain and act == "ABSTAIN":
+                show = True
+            if force_show_fail and wv_u == "FAIL":
+                show = True
+
+            if show:
+                keep.append((fname, w))
+
+        value_actions = keep
+
     if value_actions:
         for fname, w in value_actions:
             print(_summarize_value_action(fname, w))
     else:
         print("  (no per-action value witnesses found)")
     print("")
+
+
 
 
 @dataclass
@@ -239,6 +273,8 @@ def main() -> None:
     ap.add_argument("step_dir", type=str)
     ap.add_argument("--json-out", type=str, default="")
     ap.add_argument("--fail-only", action="store_true")
+    ap.add_argument("--only-selected", action="store_true", help="value_table: show only selected_action witness")
+    ap.add_argument("--include-abstain", action="store_true", help="with --only-selected: also include ABSTAIN witness")
     args = ap.parse_args()
 
     step_dir = Path(args.step_dir).expanduser().resolve()
@@ -256,7 +292,13 @@ def main() -> None:
 
     if args.fail_only:
         if ff == "value_table":
-            _print_value_table(pack)
+            _print_value_table(
+        pack,
+        only_selected=args.only_selected,
+        include_abstain=args.include_abstain,
+        selected_action=_g(bundle, "selected_action", None),
+        force_show_fail=(ff == "value_table"),
+    )
         elif ff == "percept":
             _print_contract_block("percept", pack.get("percept", {}), percept_focus)
         elif ff == "model_contract":
@@ -271,7 +313,13 @@ def main() -> None:
     else:
         _print_contract_block("percept", pack.get("percept", {}), percept_focus)
         _print_contract_block("model_contract", pack.get("model", {}), model_focus)
-        _print_value_table(pack)
+        _print_value_table(
+            pack,
+            only_selected=args.only_selected,
+            include_abstain=args.include_abstain,
+            selected_action=_g(bundle, "selected_action", None),
+            force_show_fail=False,
+        )
         _print_contract_block("risk_gate", pack.get("risk", {}), risk_focus)
         _print_contract_block("exec", pack.get("exec", {}), exec_focus)
 
