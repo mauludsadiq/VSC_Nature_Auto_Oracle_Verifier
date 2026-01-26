@@ -4,9 +4,89 @@ from typing import Any, Dict, List, Tuple, Optional
 
 from percept_contract import PerceptContractV1, verify_percept_proposal
 from model_contract import ModelContractV1, verify_model_proposal
+
+import os
+
+
+def _maybe_inject_forbidden_mass(
+    step_counter: int,
+    proposal_pairs: list,
+    forbidden_next_states: list,
+):
+    """Inject eta mass onto a forbidden next-state inside proposal_pairs.
+
+    proposal_pairs is expected to be a list of 2-tuples:
+      (next_state, prob)
+
+    We scale all existing probs by (1-eta) and append (forbidden_state, eta).
+    This preserves normalization and tests forbid_ok hard.
+    """
+
+    try:
+        inj_step = int(os.getenv("VSC_STEALTH_FORBID_INJECT_STEP", "-1"))
+        if step_counter != inj_step:
+            return proposal_pairs, None
+
+        eta = float(os.getenv("VSC_STEALTH_FORBID_ETA", "1e-12"))
+        if eta <= 0.0:
+            return proposal_pairs, None
+
+        if not forbidden_next_states:
+            return proposal_pairs, None
+
+        forbidden = forbidden_next_states[0]
+        if isinstance(forbidden, list):
+            forbidden = tuple(forbidden)
+
+        total = 0.0
+        for ns, p in proposal_pairs:
+            total += float(p)
+
+        if total <= 0.0:
+            return proposal_pairs, None
+
+        scale = max(0.0, 1.0 - eta)
+        new_pairs = []
+        for ns, p in proposal_pairs:
+            new_pairs.append((ns, float(p) * scale))
+
+        new_pairs.append((forbidden, float(eta)))
+
+        meta = {
+            "step": step_counter,
+            "eta": float(eta),
+            "forbidden_next": forbidden,
+        }
+        return new_pairs, meta
+
+    except Exception:
+        return proposal_pairs, None
+
 from value_contract import ValueContractV1, verify_value_proposal_single
 from risk_gate import RiskGateContractV1, risk_gate_select_action
 from exec_contract import ExecContractV1, SkillSpecV1, verify_exec_proposal
+
+
+import os
+
+def _maybe_inject_forbid(step_counter: int, proposed: dict) -> dict:
+    try:
+        inj_step = int(os.getenv("VSC_STEALTH_FORBID_INJECT_STEP", "-1"))
+        if step_counter != inj_step:
+            return proposed
+
+        eta = float(os.getenv("VSC_STEALTH_FORBID_ETA", "1e-12"))
+        key = os.getenv("VSC_STEALTH_FORBID_KEY", "FORBIDDEN")
+
+        from scripts.stealth_attack_runner import _inject_forbidden_mass
+
+        mutated, did = _inject_forbidden_mass(proposed, eta=eta, forbidden_key=key)
+        if did:
+            if isinstance(mutated, dict):
+                mutated["__stealth_injected__"] = {"eta": eta, "key": key}
+        return mutated
+    except Exception:
+        return proposed
 
 def load_json(p: Path) -> Any:
     return json.loads(p.read_text(encoding="utf-8"))
@@ -165,19 +245,37 @@ def run_oracle_step(
     ref_pairs = [tuple(x) for x in red_packet["model_row_ref"]]
     forbidden_next = list(red_packet.get("forbidden_next_states", []))
 
+    proposal_pairs, stealth_meta = _maybe_inject_forbidden_mass(
+        step_counter=step_counter,
+        proposal_pairs=proposal_pairs,
+        forbidden_next_states=forbidden_next,
+    )
+
+
     model_contract: ModelContractV1 = contracts["model_contract"]
     abstain_action = contracts["risk_contract"].abstain_action
     model_action = next((a for a in actions_full if a != abstain_action), abstain_action)
 
     a_row = next((a for a in actions if a != abstain_action), actions[0])
 
+    
     w_model_contract = verify_model_proposal(
-        model_contract,
-        proposal_pairs=proposal_pairs,
-        ref_pairs=ref_pairs,
-        ver_pairs=None,
-        forbidden_next_states=forbidden_next,
+    model_contract,
+    proposal_pairs=proposal_pairs,
+    ref_pairs=ref_pairs,
+    ver_pairs=None,
+    forbidden_next_states=forbidden_next,
     )
+
+    if "check" not in w_model_contract and "checks" in w_model_contract:
+        w_model_contract["check"] = w_model_contract["checks"]
+    if "checks" not in w_model_contract and "check" in w_model_contract:
+        w_model_contract["checks"] = w_model_contract["check"]
+
+
+    if stealth_meta is not None:
+        w_model_contract["stealth_inject"] = stealth_meta
+
     dump_json(out_step_dir / "w_model_contract.json", w_model_contract)
 
     value_contract: ValueContractV1 = contracts["value_contract"]
