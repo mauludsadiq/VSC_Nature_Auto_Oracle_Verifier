@@ -131,7 +131,8 @@ def _print_contract_block(name: str, witness: Dict[str, Any], focus: List[str]) 
     print(f"[{name}] verdict={verdict}")
 
     if isinstance(checks, dict) and checks:
-        keys = sorted(list(checks.keys()))
+        keys = list(checks.keys())
+        keys.sort()
         show = keys[:12]
         for k in show:
             print(f"  check.{k}={_fmt_bool(checks.get(k))}")
@@ -174,6 +175,7 @@ def _summarize_value_action(name: str, w: Dict[str, Any]) -> str:
 
     q_mc = _g(w, "mc.Q_mc", None)
     r_mc = _g(w, "mc.R_mc", None)
+
     q_hat = _g(w, "inputs.Q_hat", None)
     r_hat = _g(w, "inputs.R_hat", None)
 
@@ -182,6 +184,7 @@ def _summarize_value_action(name: str, w: Dict[str, Any]) -> str:
 
     parts: List[str] = []
     parts.append(f"{name} verdict={verdict}")
+
     if q_hat is not None:
         parts.append(f"Q_hat={_fmt_num(q_hat)}")
     if q_mc is not None:
@@ -201,6 +204,17 @@ def _summarize_value_action(name: str, w: Dict[str, Any]) -> str:
         parts.append(f"r_ok={_fmt_bool(r_ok)}")
 
     return "  " + " ".join(parts)
+
+
+def _print_value_table(pack: Dict[str, Any]) -> None:
+    print("[value_table]")
+    value_actions = pack.get("value_actions", [])
+    if value_actions:
+        for fname, w in value_actions:
+            print(_summarize_value_action(fname, w))
+    else:
+        print("  (no per-action value witnesses found)")
+    print("")
 
 
 @dataclass
@@ -224,6 +238,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("step_dir", type=str)
     ap.add_argument("--json-out", type=str, default="")
+    ap.add_argument("--fail-only", action="store_true")
     args = ap.parse_args()
 
     step_dir = Path(args.step_dir).expanduser().resolve()
@@ -234,25 +249,31 @@ def main() -> None:
 
     _print_header(step_dir, pack)
 
-    percept_focus = []
-    model_focus = []
-    risk_focus = ["derived.selected_action","derived.regret_int"]
-    exec_focus = []
+    percept_focus: List[str] = []
+    model_focus: List[str] = ["metrics.l1_to_ref", "metrics.forbidden_prob", "metrics.support_size"]
+    risk_focus: List[str] = ["derived.selected_action"]
+    exec_focus: List[str] = []
 
-    _print_contract_block("percept", pack.get("percept", {}), percept_focus)
-    _print_contract_block("model_contract", pack.get("model", {}), model_focus)
-
-    print("[value_table]")
-    value_actions = pack.get("value_actions", [])
-    if value_actions:
-        for fname, w in value_actions:
-            print(_summarize_value_action(fname, w))
+    if args.fail_only:
+        if ff == "value_table":
+            _print_value_table(pack)
+        elif ff == "percept":
+            _print_contract_block("percept", pack.get("percept", {}), percept_focus)
+        elif ff == "model_contract":
+            _print_contract_block("model_contract", pack.get("model", {}), model_focus)
+        elif ff == "risk_gate":
+            _print_contract_block("risk_gate", pack.get("risk", {}), risk_focus)
+        elif ff == "exec":
+            _print_contract_block("exec", pack.get("exec", {}), exec_focus)
+        else:
+            print("(no failing contracts)")
+            print("")
     else:
-        print("  (no per-action value witnesses found)")
-    print("")
-
-    _print_contract_block("risk_gate", pack.get("risk", {}), risk_focus)
-    _print_contract_block("exec", pack.get("exec", {}), exec_focus)
+        _print_contract_block("percept", pack.get("percept", {}), percept_focus)
+        _print_contract_block("model_contract", pack.get("model", {}), model_focus)
+        _print_value_table(pack)
+        _print_contract_block("risk_gate", pack.get("risk", {}), risk_focus)
+        _print_contract_block("exec", pack.get("exec", {}), exec_focus)
 
     summary = ExplainSummary(
         step_dir=str(step_dir),
