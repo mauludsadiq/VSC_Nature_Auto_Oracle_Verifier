@@ -66,3 +66,66 @@ def replay_verify_step_dir(step_dir: Path) -> Dict[str, Any]:
         "root_hash_txt": str(root_hash_txt or ""),
         "ts_ms": int(time.time() * 1000),
     }
+
+def _historical_step_dir(stream_id: str, step_number: int) -> Path:
+    import os
+
+    root = Path(os.getenv("VSC_HISTORICAL_ROOT", "out/historical"))
+    step_name = f"step_{int(step_number):06d}"
+    return root / str(stream_id) / step_name
+
+
+def audit_verify_historical(stream_id: str, step_number: int) -> dict:
+    import time
+
+    step_dir = _historical_step_dir(stream_id, step_number)
+
+    if not step_dir.exists():
+        out = {
+            "schema": "api.audit_verify_historical.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": "MISSING_STEP_DIR",
+            "merkle_root": "",
+            "root_hash_txt": "",
+            "leaf_hashes": [],
+            "same_hash": False,
+            "storage": {
+                "backend": "filesystem",
+                "historical_root": str(step_dir.parent.parent),
+                "object_prefix": f"{stream_id}/step_{int(step_number):06d}/",
+                "fetched_ok": False,
+            },
+            "signature_valid": False,
+            "ts_ms": int(time.time() * 1000.0),
+        }
+        return out
+
+    out = replay_verify_step_dir(step_dir)
+
+    root_hash_txt = str(out.get("root_hash_txt", ""))
+    merkle_root = str(out.get("merkle_root", ""))
+
+    same_hash = bool(root_hash_txt) and bool(merkle_root) and (root_hash_txt == merkle_root)
+
+    out2 = {
+        "schema": "api.audit_verify_historical.v1",
+        "stream_id": str(stream_id),
+        "step_number": int(step_number),
+        "ok": bool(out.get("ok", False)),
+        "reason": str(out.get("reason", "")),
+        "merkle_root": merkle_root,
+        "root_hash_txt": root_hash_txt,
+        "leaf_hashes": list(out.get("leaf_hashes", [])),
+        "same_hash": bool(same_hash),
+        "storage": {
+            "backend": "filesystem",
+            "historical_root": str(step_dir.parent.parent),
+            "object_prefix": f"{stream_id}/step_{int(step_number):06d}/",
+            "fetched_ok": True,
+        },
+        "signature_valid": False,
+        "ts_ms": int(time.time() * 1000.0),
+    }
+    return out2

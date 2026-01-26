@@ -162,50 +162,23 @@ def _print_contract_block(name: str, witness: Dict[str, Any], focus: List[str]) 
     print("")
 
 
-def _summarize_value_action(name: str, w: Dict[str, Any]) -> str:
-    verdict = _g(w, "verdict", "?")
+def _summarize_value_action(fname: str, w: Dict[str, Any]) -> str:
+    v = _g(w, "verdict", "")
+    mc = _g(w, "mc", {}) or {}
+
+    Q_mc = _g(mc, "Q_mc", None)
+    R_mc = _g(mc, "R_mc", None)
+
     checks = _g(w, "checks", {}) or {}
+    q_ok = _g(checks, "q_ok", None)
+    r_ok = _g(checks, "r_ok", None)
 
-    dq = _g(w, "metrics.dq", None)
-    dr = _g(w, "metrics.dr", None)
-    if dq is None:
-        dq = _g(w, "mc.dq", None)
-    if dr is None:
-        dr = _g(w, "mc.dr", None)
+    if q_ok is None:
+        q_ok = _g(_g(w, "check", {}) or {}, "q_ok", None)
+    if r_ok is None:
+        r_ok = _g(_g(w, "check", {}) or {}, "r_ok", None)
 
-    q_mc = _g(w, "mc.Q_mc", None)
-    r_mc = _g(w, "mc.R_mc", None)
-
-    q_hat = _g(w, "inputs.Q_hat", None)
-    r_hat = _g(w, "inputs.R_hat", None)
-
-    q_ok = checks.get("q_ok", None)
-    r_ok = checks.get("r_ok", None)
-
-    parts: List[str] = []
-    parts.append(f"{name} verdict={verdict}")
-
-    if q_hat is not None:
-        parts.append(f"Q_hat={_fmt_num(q_hat)}")
-    if q_mc is not None:
-        parts.append(f"Q_mc={_fmt_num(q_mc)}")
-    if dq is not None:
-        parts.append(f"dQ={_fmt_num(dq)}")
-    if q_ok is not None:
-        parts.append(f"q_ok={_fmt_bool(q_ok)}")
-
-    if r_hat is not None:
-        parts.append(f"R_hat={_fmt_num(r_hat)}")
-    if r_mc is not None:
-        parts.append(f"R_mc={_fmt_num(r_mc)}")
-    if dr is not None:
-        parts.append(f"dR={_fmt_num(dr)}")
-    if r_ok is not None:
-        parts.append(f"r_ok={_fmt_bool(r_ok)}")
-
-    return "  " + " ".join(parts)
-
-
+    return f"  {fname} verdict={v} Q_mc={Q_mc} q_ok={str(q_ok).lower()} R_mc={R_mc} r_ok={str(r_ok).lower()}"
 def _print_value_table(
     pack: Dict[str, Any],
     only_selected: bool,

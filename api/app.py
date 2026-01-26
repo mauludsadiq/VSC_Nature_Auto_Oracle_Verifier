@@ -5,7 +5,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from api.service import replay_verify_step_dir
+from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse
+
+from api.service import replay_verify_step_dir, audit_verify_historical
 from api.settings import APISettings
 
 settings = APISettings.from_env()
@@ -57,5 +59,15 @@ async def verify_step_dir(payload: dict):
         print(f"PASS_API_VERIFY_STEP {step_dir_raw}")
     else:
         print(f"FAIL_API_VERIFY_STEP step_dir={step_dir_raw}")
+
+    return out
+@app.post("/v1/audit/verify-historical", response_model=VerifyHistoricalResponse)
+async def verify_historical(req: VerifyHistoricalRequest):
+    out = audit_verify_historical(req.stream_id, req.step_number)
+
+    if bool(out.get("ok", False)):
+        print(f'PASS_API_VERIFY_HISTORICAL stream_id={req.stream_id} step={int(req.step_number)}')
+    else:
+        print(f'FAIL_API_VERIFY_HISTORICAL stream_id={req.stream_id} step={int(req.step_number)} reason={out.get("reason","")}')
 
     return out

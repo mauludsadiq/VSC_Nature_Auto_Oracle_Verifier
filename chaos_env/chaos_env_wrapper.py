@@ -247,28 +247,103 @@ def run_oracle_step(
     attack_c_step = int(os.getenv("VSC_ATTACK_C_INJECT_STEP","-1"))
     if step_counter == attack_c_step:
         try:
-            if isinstance(prev_state, (list, tuple)) and len(prev_state) >= 2:
-                x = int(prev_state[0])
-                y = int(prev_state[1])
+            def _norm_state_token(s):
+                if isinstance(s, (list, tuple)) and len(s) >= 2:
+                    return f"{int(s[0])},{int(s[1])}"
+                ss = str(s).strip()
+                ss = ss.replace("(", "").replace(")", "").replace("[", "").replace("]", "")
+                parts = [z.strip() for z in ss.split(",") if z.strip() != ""]
+                if len(parts) >= 2:
+                    return f"{int(float(parts[0]))},{int(float(parts[1]))}"
+                return ss
+
+            prev_s = _norm_state_token(prev_state)
+
+            # Candidate actions to try (spoofing prev_action to satisfy temporal_ok)
+            acts = red_packet.get("actions", None)
+            if not isinstance(acts, list) or len(acts) == 0:
+                acts = [prev_action]
+
+            nonce_cap = int(os.getenv("VSC_ATTACK_C_NONCE_CAP", "8192"))
+
+            found = False
+            found_nonce = None
+            forged_state = None
+            forged_prev_action = None
+            obs = None
+
+            for a_try in acts:
+                a_try_s = str(a_try)
+
+                row = T_ver.get((prev_s, a_try_s), None)
+                if not isinstance(row, dict) or len(row) == 0:
+                    continue
+
+                # pick best next-state != prev_state under this action
+                cand = sorted(row.items(), key=lambda kv: kv[1], reverse=True)
+                s2_try = None
+                for s2, mass in cand:
+                    s2s = _norm_state_token(s2)
+                    if s2s != prev_s and int(mass) > 0:
+                        s2_try = s2s
+                        break
+                if s2_try is None:
+                    continue
+
+                # brute force nonce to satisfy multiview on this forged state
+                for n in range(nonce_cap):
+                    obs_try = {"raw": f"pos={s2_try}", "nonce": int(n)}
+                    w_try = verify_percept_proposal(
+                        contract=percept_contract,
+                        observation=obs_try,
+                        proposed_state=s2_try,
+                        prev_state=prev_s,
+                        prev_action=a_try_s,
+                        t_ver=T_ver,
+                        state_vocab=state_vocab,
+                    )
+                    if w_try.get("verdict") == "PASS":
+                        found = True
+                        found_nonce = int(n)
+                        forged_state = s2_try
+                        forged_prev_action = a_try_s
+                        obs = obs_try
+                        break
+
+                if found:
+                    break
+
+            if found:
+                # Apply the forged percept surface
+                observation = obs
+                red_packet["observation"] = observation
+                proposed_state = forged_state
+                red_packet["proposed_state"] = proposed_state
+                red_packet["state"] = proposed_state
+
+                # Spoof prev_action ONLY for percept temporal alignment
+                prev_action = forged_prev_action
+                red_packet["prev_action"] = prev_action
+
+                red_packet["__attack_c__"] = {
+                    "step": int(step_counter),
+                    "prev_state": prev_s,
+                    "forged_state": forged_state,
+                    "forged_prev_action": forged_prev_action,
+                    "nonce": int(found_nonce),
+                    "note": "action+nonce search: forged (prev_action,state) pair to pass percept while drifting perceived_state"
+                }
             else:
-                sps = str(prev_state).strip().replace("(","").replace(")","")
-                xs, ys = sps.split(",")[:2]
-                x = int(xs)
-                y = int(ys)
-            S_env = int(contracts["model_contract"].S)
-            y2 = min(S_env, y + 2)
-            forged = f"{x},{y2}"
-            red_packet["observation"] = forged
-            red_packet["proposed_state"] = forged
-            red_packet["__attack_c__"] = {
-                "step": int(step_counter),
-                "prev_state": [int(x), int(y)],
-                "forged_perceived_state": [int(x), int(y2)],
-                "note": "forged observation + proposed_state to drift perceived_state"
-            }
+                red_packet["__attack_c__"] = {
+                    "step": int(step_counter),
+                    "prev_state": prev_s,
+                    "forged_state": None,
+                    "forged_prev_action": None,
+                    "nonce": None,
+                    "note": "no drift target found under any action within nonce cap (percept contract resisted Attack C)"
+                }
         except Exception:
             pass
-
     w_percept = verify_percept_proposal(
         contract=percept_contract,
         observation=observation,

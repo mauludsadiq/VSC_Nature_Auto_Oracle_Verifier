@@ -41,3 +41,26 @@ class VerifyStepDirResponse(_Base):
     step_dir: str
     merkle_root: str
     leaf_hashes: List[str]
+class VerifyHistoricalRequest(BaseModel):
+    stream_id: str
+    step_number: int
+
+
+class VerifyHistoricalResponse(BaseModel):
+    schema: str
+    stream_id: str
+    step_number: int
+
+    ok: bool
+    reason: str
+
+    merkle_root: str
+    root_hash_txt: str
+    leaf_hashes: list[str]
+
+    same_hash: bool
+
+    storage: dict
+    signature_valid: bool
+    ts_ms: int
+
