@@ -446,6 +446,8 @@ def run_oracle_step(
         value_children.append({"file": vf.name, "hash": canon_hash(vj)})
 
     bundle = {
+      "red_packet": red_packet,
+
         "schema": "oracle.bundle.v3",
         "step_counter": step_counter,
         "prev_state": prev_state,
