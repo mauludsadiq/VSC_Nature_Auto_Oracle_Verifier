@@ -244,6 +244,31 @@ def run_oracle_step(
         else:
             proposed_state = s_raw
 
+    attack_c_step = int(os.getenv("VSC_ATTACK_C_INJECT_STEP","-1"))
+    if step_counter == attack_c_step:
+        try:
+            if isinstance(prev_state, (list, tuple)) and len(prev_state) >= 2:
+                x = int(prev_state[0])
+                y = int(prev_state[1])
+            else:
+                sps = str(prev_state).strip().replace("(","").replace(")","")
+                xs, ys = sps.split(",")[:2]
+                x = int(xs)
+                y = int(ys)
+            S_env = int(contracts["model_contract"].S)
+            y2 = min(S_env, y + 2)
+            forged = f"{x},{y2}"
+            red_packet["observation"] = forged
+            red_packet["proposed_state"] = forged
+            red_packet["__attack_c__"] = {
+                "step": int(step_counter),
+                "prev_state": [int(x), int(y)],
+                "forged_perceived_state": [int(x), int(y2)],
+                "note": "forged observation + proposed_state to drift perceived_state"
+            }
+        except Exception:
+            pass
+
     w_percept = verify_percept_proposal(
         contract=percept_contract,
         observation=observation,
