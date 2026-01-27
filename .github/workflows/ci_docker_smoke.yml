@@ -16,9 +16,12 @@ jobs:
           docker build -t vsc_oracle_verifier:ci .
 
       - name: Run smoke and assert PASS lines
+        shell: bash
         run: |
           mkdir -p out
-          docker run --rm -t vsc_oracle_verifier:ci | tee out/docker_smoke.log
+
+          docker run --rm -t vsc_oracle_verifier:ci 2>&1 | tee out/docker_smoke.log
+          test "${PIPESTATUS[0]}" = "0"
 
           grep -n "SMOKE_PASS" out/docker_smoke.log
           grep -n "PASS_API_STATUS notary_on=1 scheme=ed25519.v1" out/docker_smoke.log
