@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse, PromoteStepResponse
 
-from api.service import replay_verify_step_dir, audit_verify_historical, api_status, verify_red_packet, stream_get_manifest_or_file, promote_step
+from api.service import replay_verify_step_dir, audit_verify_historical, api_status, verify_red_packet, stream_get_manifest_or_file, promote_step, promote_step
 from api.models import APIStatusResponse, StreamFileResponse, StreamManifestResponse, VerifyRedPacketResponse
 from api.settings import APISettings
 
@@ -88,3 +88,9 @@ async def verify_red_packet_endpoint(payload: dict):
 def stream_manifest_endpoint(stream_id: str, k: int, file: str = ""):
     out = stream_get_manifest_or_file(stream_id, int(k), str(file or ""))
     return out
+
+
+@app.post("/v1/stream/{stream_id}/step/{k}/promote")
+def promote_step_endpoint(stream_id: str, k: int, sign: int = 0):
+    sign_flag = bool(int(sign))
+    return promote_step(stream_id=stream_id, step_number=int(k), sign=sign_flag)

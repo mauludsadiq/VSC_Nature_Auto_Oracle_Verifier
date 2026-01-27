@@ -84,6 +84,7 @@ class APIStatusResponse(BaseModel):
     port: int
     allow_schema: str
     historical_root: str
+    notary_on: bool
     signature_scheme: str
     ledger_pubkey_path: str
     ts_ms: int

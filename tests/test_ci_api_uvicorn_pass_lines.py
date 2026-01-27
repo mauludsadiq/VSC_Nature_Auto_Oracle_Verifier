@@ -45,16 +45,6 @@ def test_ci_api_uvicorn_pass_lines(tmp_path):
 
     step_dir = repo / "out" / "stream" / "step_000001"
     assert step_dir.exists(), "step_dir missing; oracle_gamble_runner did not emit step_000001"
-    r0 = _http_post_json(f"{base}/v1/stream/oracle_001/step/1/promote?sign=0", {})
-    assert r0.get("schema") == "api.promote_step.v1"
-    assert r0.get("ok") is True
-    assert r0.get("reason") == "PASS_PROMOTE_STEP"
-
-    r0b = _http_post_json(f"{base}/v1/stream/oracle_001/step/1/promote?sign=0", {})
-    assert r0b.get("schema") == "api.promote_step.v1"
-    assert r0b.get("ok") is False
-    assert r0b.get("reason") == "DEST_ALREADY_EXISTS"
-
     host = "127.0.0.1"
     port = 8001
     base = f"http://{host}:{port}"
@@ -70,6 +60,16 @@ def test_ci_api_uvicorn_pass_lines(tmp_path):
 
     try:
         _wait_http_ok(f"{base}/v1/health", timeout_s=12.0)
+
+        r0 = _http_post_json(f"{base}/v1/stream/oracle_001/step/1/promote?sign=0", {})
+        assert r0.get("schema") == "api.promote_step.v1"
+        assert r0.get("ok") is True
+        assert r0.get("reason") == "PASS_PROMOTE_STEP"
+
+        r0b = _http_post_json(f"{base}/v1/stream/oracle_001/step/1/promote?sign=0", {})
+        assert r0b.get("schema") == "api.promote_step.v1"
+        assert r0b.get("ok") is False
+        assert r0b.get("reason") == "DEST_ALREADY_EXISTS"
 
         r1 = _http_post_json(f"{base}/v1/verify/step-dir", {"step_dir": str(step_dir)})
         assert r1.get("schema") == "api.replay_verify_step.v1"

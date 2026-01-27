@@ -120,7 +120,7 @@ def audit_verify_historical(stream_id: str, step_number: int) -> dict:
                 "object_prefix": object_prefix,
                 "fetched_ok": False,
             },
-            "signature_valid": signature_valid,
+            "signature_valid": False,
             "ts_ms": int(time.time() * 1000),
         }
 
@@ -188,25 +188,25 @@ def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path
     pubkey_path = Path(pubkey_path)
     sig_path = step_dir / "root.sig"
     if not sig_path.exists():
-        return {"signature_valid": signature_valid, "reason": "NO_SIGNATURE"}
+        return {"signature_valid": False, "reason": "NO_SIGNATURE"}
 
     if not root_hash_txt:
-        return {"signature_valid": signature_valid, "reason": "NO_ROOT_HASH"}
+        return {"signature_valid": False, "reason": "NO_ROOT_HASH"}
 
     sig_raw = ""
     try:
         sig_raw = _read_text(sig_path).strip()
     except Exception:
-        return {"signature_valid": signature_valid, "reason": "SIG_READ_FAIL"}
+        return {"signature_valid": False, "reason": "SIG_READ_FAIL"}
 
     sig_bytes = b""
     try:
         sig_bytes = bytes.fromhex(sig_raw)
     except Exception:
-        return {"signature_valid": signature_valid, "reason": "SIG_PARSE_FAIL"}
+        return {"signature_valid": False, "reason": "SIG_PARSE_FAIL"}
 
     if not pubkey_path.exists():
-        return {"signature_valid": signature_valid, "reason": "NO_PUBKEY"}
+        return {"signature_valid": False, "reason": "NO_PUBKEY"}
 
     pub_bytes = b""
     pub_text = ""
@@ -218,7 +218,7 @@ def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path
     msg = root_hash_txt.strip().encode("utf-8")
 
     if scheme != "ed25519.v1":
-        return {"signature_valid": signature_valid, "reason": "UNSUPPORTED_SCHEME"}
+        return {"signature_valid": False, "reason": "UNSUPPORTED_SCHEME"}
 
     # Try cryptography (preferred)
     try:
@@ -242,13 +242,13 @@ def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path
         from nacl.signing import VerifyKey
 
         if pub_text.startswith("-----BEGIN"):
-            return {"signature_valid": signature_valid, "reason": "PEM_UNSUPPORTED_NO_CRYPTO"}
+            return {"signature_valid": False, "reason": "PEM_UNSUPPORTED_NO_CRYPTO"}
         pub_bytes = bytes.fromhex(pub_text)
         vk = VerifyKey(pub_bytes)
         vk.verify(msg, sig_bytes)
         return {"signature_valid": True, "reason": "OK"}
     except Exception:
-        return {"signature_valid": signature_valid, "reason": "VERIFY_FAIL"}
+        return {"signature_valid": False, "reason": "VERIFY_FAIL"}
 
 
 
@@ -319,6 +319,21 @@ def _safe_file_name(raw: str) -> str:
 
 
 def api_status() -> Dict[str, Any]:
+    from api.settings import APISettings
+
+    settings = APISettings.from_env()
+    scheme = (getattr(settings, "signature_scheme", "") or "").strip()
+    pk = Path(getattr(settings, "ledger_pubkey_path", "") or "")
+
+    notary_on = False
+    effective_scheme = ""
+    effective_pubkey_path = ""
+
+    if scheme != "" and str(pk) not in ("", ".") and pk.exists() and pk.is_file():
+        notary_on = True
+        effective_scheme = scheme
+        effective_pubkey_path = str(pk)
+
     out = {
         "schema": "api.status.v1",
         "ok": True,
@@ -326,13 +341,13 @@ def api_status() -> Dict[str, Any]:
         "port": settings.port,
         "allow_schema": settings.allow_schema,
         "historical_root": str(settings.historical_root),
-        "signature_scheme": settings.signature_scheme,
-        "ledger_pubkey_path": str(settings.ledger_pubkey_path),
-        "ts_ms": _ts_ms(),
+        "notary_on": bool(notary_on),
+        "signature_scheme": effective_scheme,
+        "ledger_pubkey_path": effective_pubkey_path,
+        "ts_ms": int(time.time() * 1000),
     }
-    print("PASS_API_STATUS")
+    print(f"PASS_API_STATUS notary_on={int(notary_on)} scheme={(effective_scheme or 'OFF')}")
     return out
-
 
 def verify_red_packet(payload: Dict[str, Any]) -> Dict[str, Any]:
     pkt_schema = str(payload.get("schema", "") or "")
