@@ -31,7 +31,8 @@ rm -f "$HIST/$STREAM_ID/step_$(printf '%06d' "$STEP_NUMBER")/root.sig"
 rm -f out/api_server.log
 mkdir -p out
 
-VSC_HISTORICAL_ROOT="$HIST" \
+PYTHONWARNINGS=ignore \
+VSC_HISTORICAL_ROOT="" \
 VSC_SIGNATURE_SCHEME="$SCHEME" \
 VSC_LEDGER_PUBKEY_PATH="$PUBKEY_PATH" \
 python3 -m uvicorn api.app:app --host "$HOST" --port "$PORT" 2>&1 | tee out/api_server.log &
