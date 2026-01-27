@@ -20,127 +20,147 @@ mkdir -p "$HIST"
 
 cp -R "$FIXTURE_ROOT/$STREAM_ID" "$HIST/$STREAM_ID" 2>/dev/null || true
 
-if [ ! -d "$HIST/$STREAM_ID/step_$(printf '%06d' "$STEP_NUMBER")" ]; then
+STEP_DIR="$HIST/$STREAM_ID/step_$(printf '%06d' "$STEP_NUMBER")"
+if [ ! -d "$STEP_DIR" ]; then
   echo "SMOKE_FAIL missing fixture step dir"
-  echo "$HIST/$STREAM_ID/step_$(printf '%06d' "$STEP_NUMBER")"
+  echo "$STEP_DIR"
   exit 2
 fi
 
-rm -f "$HIST/$STREAM_ID/step_$(printf '%06d' "$STEP_NUMBER")/root.sig"
+rm -f "$STEP_DIR/root.sig"
 
 rm -f out/api_server.log
 mkdir -p out
 
-PYTHONWARNINGS=ignore \
-VSC_HISTORICAL_ROOT="" \
+VSC_HISTORICAL_ROOT="$HIST" \
 VSC_SIGNATURE_SCHEME="$SCHEME" \
 VSC_LEDGER_PUBKEY_PATH="$PUBKEY_PATH" \
 python3 -m uvicorn api.app:app --host "$HOST" --port "$PORT" 2>&1 | tee out/api_server.log &
 SVPID="$!"
 
-python3 - <<PY
-import time
-import urllib.request
-base = "${BASE}"
-deadline = time.time() + 15.0
-ok = False
-while time.time() < deadline:
-    try:
-        with urllib.request.urlopen(base + "/v1/health", timeout=2.0) as r:
-            if r.status == 200:
-                ok = True
-                break
-    except Exception:
-        time.sleep(0.2)
-print("SMOKE_HEALTH_OK" if ok else "SMOKE_HEALTH_FAIL")
-raise SystemExit(0 if ok else 2)
-PY
-RC="$?"
-if [ "$RC" != "0" ]; then
+fail_with_logs () {
+  echo "=== SMOKE_FAIL_CONTEXT ==="
+  echo "BASE=$BASE"
+  echo "HIST=$HIST"
+  echo "STEP_DIR=$STEP_DIR"
+  echo "PUBKEY_PATH=$PUBKEY_PATH"
+  echo "SCHEME=$SCHEME"
+  echo
+  echo "=== SERVER LOG TAIL ==="
+  tail -200 out/api_server.log 2>/dev/null || true
   kill "$SVPID" 2>/dev/null || true
   exit 2
-fi
+}
 
-curl -sS "$BASE/v1/status" | python3 -m json.tool > "$TMP/status.json"
+# Health gate (curl loop): stable + produces uvicorn access log line
+i=0
+ok=0
+while [ "$i" -lt 300 ]; do
+  if curl -fsS "$BASE/v1/health" >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 0.2
+  i=$((i+1))
+done
+
+if [ "$ok" != "1" ]; then
+  echo "SMOKE_HEALTH_FAIL"
+  fail_with_logs
+fi
+echo "SMOKE_HEALTH_OK"
+
+curl -fsS "$BASE/v1/status" | python3 -m json.tool > "$TMP/status.json" 2>/dev/null || true
 
 python3 - <<PY
-import json
+import json, sys
 p = "${TMP}/status.json"
-d = json.load(open(p,"r",encoding="utf-8"))
+try:
+    d = json.load(open(p,"r",encoding="utf-8"))
+except Exception:
+    sys.exit(2)
 need = ["notary_on","signature_scheme","ledger_pubkey_path"]
 for k in need:
     if k not in d:
-        raise SystemExit(2)
+        sys.exit(2)
 if not d["notary_on"]:
-    raise SystemExit(2)
+    sys.exit(2)
 if d["signature_scheme"] != "${SCHEME}":
-    raise SystemExit(2)
+    sys.exit(2)
 if d["ledger_pubkey_path"] != "${PUBKEY_PATH}":
-    raise SystemExit(2)
+    sys.exit(2)
 print("SMOKE_STATUS_OK")
 PY
 RC="$?"
 if [ "$RC" != "0" ]; then
-  kill "$SVPID" 2>/dev/null || true
-  exit 2
+  echo "=== STATUS.JSON ==="
+  cat "$TMP/status.json" 2>/dev/null || true
+  fail_with_logs
 fi
 
-curl -sS -X POST \
+curl -fsS -X POST \
   "$BASE/v1/stream/$STREAM_ID/step/$STEP_NUMBER/sign" \
   -H 'Content-Type: application/json' \
-  -d '{}' | python3 -m json.tool > "$TMP/sign.json"
+  -d '{}' | python3 -m json.tool > "$TMP/sign.json" 2>/dev/null || true
 
 python3 - <<PY
-import json
+import json, sys
 p = "${TMP}/sign.json"
-d = json.load(open(p,"r",encoding="utf-8"))
+try:
+    d = json.load(open(p,"r",encoding="utf-8"))
+except Exception:
+    sys.exit(2)
 if not d.get("ok"):
-    raise SystemExit(2)
+    sys.exit(2)
 if d.get("reason") != "PASS_SIGN_STEP":
-    raise SystemExit(2)
+    sys.exit(2)
 print("SMOKE_SIGN_OK")
 PY
 RC="$?"
 if [ "$RC" != "0" ]; then
-  kill "$SVPID" 2>/dev/null || true
-  exit 2
+  echo "=== SIGN.JSON ==="
+  cat "$TMP/sign.json" 2>/dev/null || true
+  fail_with_logs
 fi
 
-SIGP="$HIST/$STREAM_ID/step_$(printf '%06d' "$STEP_NUMBER")/root.sig"
+SIGP="$STEP_DIR/root.sig"
 if [ ! -f "$SIGP" ]; then
   echo "SMOKE_FAIL root.sig missing"
-  kill "$SVPID" 2>/dev/null || true
-  exit 2
+  fail_with_logs
 fi
 
-curl -sS -X POST \
+curl -fsS -X POST \
   "$BASE/v1/audit/verify-historical" \
   -H 'Content-Type: application/json' \
-  -d "{\"stream_id\":\"$STREAM_ID\",\"step_number\":$STEP_NUMBER}" | python3 -m json.tool > "$TMP/audit.json"
+  -d "{\"stream_id\":\"$STREAM_ID\",\"step_number\":$STEP_NUMBER}" | python3 -m json.tool > "$TMP/audit.json" 2>/dev/null || true
 
 python3 - <<PY
-import json
+import json, sys
 p = "${TMP}/audit.json"
-d = json.load(open(p,"r",encoding="utf-8"))
+try:
+    d = json.load(open(p,"r",encoding="utf-8"))
+except Exception:
+    sys.exit(2)
 if not d.get("ok"):
-    raise SystemExit(2)
+    sys.exit(2)
 if d.get("reason") != "PASS_VERIFY_BUNDLE":
-    raise SystemExit(2)
+    sys.exit(2)
 if not d.get("same_hash"):
-    raise SystemExit(2)
+    sys.exit(2)
 if not d.get("signature_valid"):
-    raise SystemExit(2)
+    sys.exit(2)
 print("SMOKE_AUDIT_OK")
 PY
 RC="$?"
 if [ "$RC" != "0" ]; then
-  kill "$SVPID" 2>/dev/null || true
-  exit 2
+  echo "=== AUDIT.JSON ==="
+  cat "$TMP/audit.json" 2>/dev/null || true
+  fail_with_logs
 fi
 
-grep -n "PASS_API_STATUS" out/api_server.log | tail -20 || true
-grep -n "PASS_API_SIGN_STEP" out/api_server.log | tail -20 || true
-grep -n "PASS_API_VERIFY_HISTORICAL_SIGNATURE" out/api_server.log | tail -20 || true
+grep -n "^PASS_API_STATUS " out/api_server.log | tail -20 || true
+grep -n "^PASS_API_SIGN_STEP " out/api_server.log | tail -20 || true
+grep -n "^PASS_API_VERIFY_HISTORICAL_SIGNATURE " out/api_server.log | tail -20 || true
 
 kill "$SVPID" 2>/dev/null || true
 
