@@ -5,9 +5,10 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse
+from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse, PromoteStepResponse
 
-from api.service import replay_verify_step_dir, audit_verify_historical
+from api.service import replay_verify_step_dir, audit_verify_historical, api_status, verify_red_packet, stream_get_manifest_or_file, promote_step
+from api.models import APIStatusResponse, StreamFileResponse, StreamManifestResponse, VerifyRedPacketResponse
 from api.settings import APISettings
 
 settings = APISettings.from_env()
@@ -70,4 +71,20 @@ async def verify_historical(req: VerifyHistoricalRequest):
     else:
         print(f'FAIL_API_VERIFY_HISTORICAL stream_id={req.stream_id} step={int(req.step_number)} reason={out.get("reason","")}')
 
+    return out
+
+
+@app.get("/v1/status", response_model=APIStatusResponse)
+def status():
+    return api_status()
+
+
+@app.post("/v1/verify/red-packet", response_model=VerifyRedPacketResponse)
+async def verify_red_packet_endpoint(payload: dict):
+    return verify_red_packet(payload)
+
+
+@app.get("/v1/stream/{stream_id}/step/{k}/manifest", response_model=None)
+def stream_manifest_endpoint(stream_id: str, k: int, file: str = ""):
+    out = stream_get_manifest_or_file(stream_id, int(k), str(file or ""))
     return out
