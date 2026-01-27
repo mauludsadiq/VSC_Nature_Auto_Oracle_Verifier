@@ -1,0 +1,26 @@
+name: docker-smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build -t vsc_oracle_verifier:ci .
+
+      - name: Run smoke and assert PASS lines
+        run: |
+          mkdir -p out
+          docker run --rm -t vsc_oracle_verifier:ci | tee out/docker_smoke.log
+
+          grep -n "SMOKE_PASS" out/docker_smoke.log
+          grep -n "PASS_API_STATUS notary_on=1 scheme=ed25519.v1" out/docker_smoke.log
+          grep -n "PASS_API_SIGN_STEP stream_id=oracle_001 step=1 scheme=ed25519.v1" out/docker_smoke.log
+          grep -n "PASS_API_VERIFY_HISTORICAL_SIGNATURE stream_id=oracle_001 step=1 scheme=ed25519.v1" out/docker_smoke.log
