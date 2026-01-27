@@ -184,6 +184,7 @@ def _verify_step_dir_disk(step_dir: Path) -> dict:
     return {"ok": False, "reason": "VERIFY_STEP_DIR_BAD_RETURN", "merkle_root": "", "leaf_hashes": [], "step_dir": str(step_dir)}
 
 def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path, scheme: str) -> dict:
+    signature_valid = False
     pubkey_path = Path(pubkey_path)
     sig_path = step_dir / "root.sig"
     if not sig_path.exists():
