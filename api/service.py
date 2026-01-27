@@ -601,3 +601,144 @@ def promote_step(stream_id: str, step_number: int, sign: bool) -> Dict[str, Any]
     }
     print(f"PASS_API_PROMOTE_STEP stream_id={stream_id} step={step_number} signed={int(signed)} scheme={settings.signature_scheme}")
     return out
+
+
+
+def _sign_ed25519_v1(msg: bytes, sk_hex: str) -> str:
+    sk_hex = (sk_hex or "").strip()
+    if not sk_hex:
+        raise ValueError("EMPTY_PRIVKEY")
+
+    try:
+        sk_bytes = bytes.fromhex(sk_hex)
+    except Exception as e:
+        raise ValueError("PRIVKEY_NOT_HEX") from e
+
+    if len(sk_bytes) not in (32, 64):
+        raise ValueError(f"PRIVKEY_BAD_LEN_{len(sk_bytes)}")
+
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    except Exception as e:
+        raise RuntimeError("CRYPTOGRAPHY_NOT_INSTALLED") from e
+
+    if len(sk_bytes) == 32:
+        sk = Ed25519PrivateKey.from_private_bytes(sk_bytes)
+    else:
+        sk = Ed25519PrivateKey.from_private_bytes(sk_bytes[:32])
+
+    sig = sk.sign(msg)
+    return sig.hex()
+
+def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
+    import time
+
+    settings = APISettings.from_env()
+    step_dir = settings.historical_root / str(stream_id) / f"step_{int(step_number):06d}"
+
+    if not step_dir.exists() or not step_dir.is_dir():
+        return {
+            "schema": "api.sign_step.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": "MISSING_STEP_DIR",
+            "step_dir": str(step_dir),
+            "signed": False,
+            "signature_scheme": str(settings.signature_scheme or ""),
+            "ts_ms": int(time.time() * 1000),
+        }
+
+    sig_path = step_dir / "root.sig"
+    if sig_path.exists():
+        return {
+            "schema": "api.sign_step.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": "SIG_ALREADY_EXISTS",
+            "step_dir": str(step_dir),
+            "signed": True,
+            "signature_scheme": str(settings.signature_scheme or ""),
+            "ts_ms": int(time.time() * 1000),
+        }
+
+    scheme = str(settings.signature_scheme or "")
+    pk_path = Path(str(settings.ledger_pubkey_path or "")).expanduser()
+    sk_path = pk_path.parent / "ledger_privkey.hex"
+
+    if scheme != "ed25519.v1":
+        return {
+            "schema": "api.sign_step.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": "UNSUPPORTED_SCHEME",
+            "step_dir": str(step_dir),
+            "signed": False,
+            "signature_scheme": scheme,
+            "ts_ms": int(time.time() * 1000),
+        }
+
+    if not sk_path.exists():
+        return {
+            "schema": "api.sign_step.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": "MISSING_PRIVKEY",
+            "step_dir": str(step_dir),
+            "signed": False,
+            "signature_scheme": scheme,
+            "ts_ms": int(time.time() * 1000),
+        }
+
+    root_hash_txt = ""
+    try:
+        root_hash_txt = _read_text(step_dir / "root_hash.txt").strip()
+    except Exception:
+        root_hash_txt = ""
+
+    if not root_hash_txt:
+        return {
+            "schema": "api.sign_step.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": "NO_ROOT_HASH",
+            "step_dir": str(step_dir),
+            "signed": False,
+            "signature_scheme": scheme,
+            "ts_ms": int(time.time() * 1000),
+        }
+    sk_hex = _read_text(sk_path).strip()
+    msg = root_hash_txt.encode("utf-8")
+    try:
+        sig_hex = _sign_ed25519_v1(msg, sk_hex)
+    except Exception as e:
+        return {
+            "schema": "api.sign_step.v1",
+            "stream_id": str(stream_id),
+            "step_number": int(step_number),
+            "ok": False,
+            "reason": str(e),
+            "step_dir": str(step_dir),
+            "signed": False,
+            "signature_scheme": scheme,
+            "ts_ms": int(time.time() * 1000),
+        }
+
+    sig_path.write_text(sig_hex + "\n", encoding="utf-8")
+
+    print(f"PASS_API_SIGN_STEP stream_id={stream_id} step={int(step_number)} scheme={scheme}")
+    return {
+        "schema": "api.sign_step.v1",
+        "stream_id": str(stream_id),
+        "step_number": int(step_number),
+        "ok": True,
+        "reason": "PASS_SIGN_STEP",
+        "step_dir": str(step_dir),
+        "signed": True,
+        "signature_scheme": scheme,
+        "ts_ms": int(time.time() * 1000),
+    }

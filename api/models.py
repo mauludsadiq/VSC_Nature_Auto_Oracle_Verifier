@@ -132,3 +132,15 @@ class PromoteStepResponse(BaseModel):
     signed: bool
     signature_scheme: str
     ts_ms: int
+
+
+class SignStepResponse(BaseModel):
+    schema: str = "api.sign_step.v1"
+    stream_id: str
+    step_number: int
+    ok: bool
+    reason: str
+    step_dir: str
+    signed: bool
+    signature_scheme: str
+    ts_ms: int

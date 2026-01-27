@@ -5,9 +5,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse, PromoteStepResponse
+from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse, PromoteStepResponse, SignStepResponse
 
-from api.service import replay_verify_step_dir, audit_verify_historical, api_status, verify_red_packet, stream_get_manifest_or_file, promote_step, promote_step
+from api.service import replay_verify_step_dir, audit_verify_historical, api_status, verify_red_packet, stream_get_manifest_or_file, promote_step, promote_step, sign_step
 from api.models import APIStatusResponse, StreamFileResponse, StreamManifestResponse, VerifyRedPacketResponse
 from api.settings import APISettings
 
@@ -94,3 +94,8 @@ def stream_manifest_endpoint(stream_id: str, k: int, file: str = ""):
 def promote_step_endpoint(stream_id: str, k: int, sign: int = 0):
     sign_flag = bool(int(sign))
     return promote_step(stream_id=stream_id, step_number=int(k), sign=sign_flag)
+
+
+@app.post("/v1/stream/{stream_id}/step/{k}/sign", response_model=SignStepResponse)
+async def sign_step_endpoint(stream_id: str, k: int):
+    return sign_step(stream_id=stream_id, step_number=int(k))
