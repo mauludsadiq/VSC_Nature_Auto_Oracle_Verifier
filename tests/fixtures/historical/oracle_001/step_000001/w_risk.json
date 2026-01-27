@@ -1,0 +1,37 @@
+{
+  "schema": "contract.risk_gate.v1",
+  "contract": {
+    "S": 10,
+    "rho_max": 0.05,
+    "eps_regret": 0.0,
+    "abstain_action": "ABSTAIN"
+  },
+  "inputs": {
+    "q_int": {
+      "ABSTAIN": 0,
+      "MOVE_RIGHT": 0
+    },
+    "r_int": {
+      "ABSTAIN": 0,
+      "MOVE_RIGHT": 0
+    },
+    "proposed_action": "ABSTAIN"
+  },
+  "derived": {
+    "safe_actions": [
+      "ABSTAIN",
+      "MOVE_RIGHT"
+    ],
+    "selected_action": "ABSTAIN",
+    "selected_risk": null,
+    "regret": 0.0
+  },
+  "checks": {
+    "action_set_ok": true,
+    "safe_nonempty": true,
+    "risk_ok": true,
+    "regret_ok": true,
+    "proposal_ok": true
+  },
+  "verdict": "PASS"
+}

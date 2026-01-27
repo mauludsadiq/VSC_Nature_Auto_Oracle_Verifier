@@ -1,0 +1,20 @@
+{
+  "schema": "oracle.value_table.v1",
+  "step_counter": 1,
+  "state": "1,2",
+  "actions": [
+    "ABSTAIN",
+    "MOVE_RIGHT"
+  ],
+  "children": [
+    {
+      "action": "ABSTAIN",
+      "hash": "92c7f8c0ea675a61d87131227553660427f2de38b1478594b5f36bb63587ef82"
+    },
+    {
+      "action": "MOVE_RIGHT",
+      "hash": "e32485782e17ed6cdeb64454990d039178a267dbd8ba483faa1a04c2d1d2313c"
+    }
+  ],
+  "verdict": "PASS"
+}

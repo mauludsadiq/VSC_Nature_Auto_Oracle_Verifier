@@ -1,0 +1,56 @@
+{
+  "schema": "contract.model.v1",
+  "contract": {
+    "S": 10,
+    "eps_T": 0.1,
+    "eps_update": 0.05,
+    "k_max": 3,
+    "pi_min": 0.01,
+    "eta_forbid": 0.001
+  },
+  "inputs": {
+    "proposal_pairs": [
+      [
+        "1,2",
+        1.0
+      ]
+    ],
+    "ref_pairs": [
+      [
+        "1,2",
+        1.0
+      ]
+    ],
+    "ver_pairs": null,
+    "forbidden_next_states": [
+      "9,9"
+    ]
+  },
+  "candidate_int_mass": {
+    "1,2": 1024
+  },
+  "ref_int_mass": {
+    "1,2": 1024
+  },
+  "metrics": {
+    "support_size": 1,
+    "l1_to_ref": 0.0,
+    "forbidden_prob": 0.0,
+    "l1_to_verified": null
+  },
+  "checks": {
+    "support_ok": true,
+    "pi_min_ok": true,
+    "l1_ref_ok": true,
+    "forbid_ok": true,
+    "l1_ver_ok": true
+  },
+  "verdict": "PASS",
+  "check": {
+    "support_ok": true,
+    "pi_min_ok": true,
+    "l1_ref_ok": true,
+    "forbid_ok": true,
+    "l1_ver_ok": true
+  }
+}

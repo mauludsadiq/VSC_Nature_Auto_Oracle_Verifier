@@ -1,0 +1,44 @@
+{
+  "schema": "contract.value.v1",
+  "contract": {
+    "S": 10,
+    "gamma_fp": 1.0,
+    "horizon": 1,
+    "n_rollouts": 64,
+    "eps_q": 2.0,
+    "eps_r": 2.0,
+    "follow_action": "ABSTAIN"
+  },
+  "inputs": {
+    "s": "1,2",
+    "a": "MOVE_RIGHT",
+    "proposed_q": 0.0,
+    "proposed_r": 0.0,
+    "rollout_seed": 732712338,
+    "t_ver_hash": "2b6f812852508f9fce5e46e7cd14094d2a01da76deb7487e57a547acc141eb70",
+    "reward_table_hash": "dbfce5dfb28b46c4eb8466e5bc220b80b8667ce900e90bbf96c4d564793125a1",
+    "violation_states": [
+      "9,9"
+    ]
+  },
+  "mc": {
+    "Q_mc_int": 0,
+    "R_mc_int": 0,
+    "Q_mc": 0.0,
+    "R_mc": 0.0,
+    "traj_hashes_digest": "46ae4e3bfc776ad142bbfe57680055f2c119cb450e00c9f74a9bf9d225082166"
+  },
+  "diffs": {
+    "Q_hat_int": 0,
+    "R_hat_int": 0,
+    "dq_int": 0,
+    "dr_int": 0,
+    "dq": 0.0,
+    "dr": 0.0
+  },
+  "checks": {
+    "q_ok": true,
+    "r_ok": true
+  },
+  "verdict": "PASS"
+}

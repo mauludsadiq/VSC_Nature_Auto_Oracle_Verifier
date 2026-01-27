@@ -1,0 +1,52 @@
+{
+  "schema": "contract.exec.v1",
+  "contract": {
+    "S": 10,
+    "pi_min": 0.01,
+    "eps_model": 0.0,
+    "forbid_states": [
+      "9,9"
+    ]
+  },
+  "skill": {
+    "name": "ABSTAIN",
+    "pre_states": [
+      "1,1",
+      "1,2",
+      "9,9"
+    ],
+    "post_states": [
+      "1,1",
+      "1,2",
+      "9,9"
+    ],
+    "allowed_subactions": [
+      "ABSTAIN"
+    ],
+    "max_trace_len": 1
+  },
+  "inputs": {
+    "s_t": "1,2",
+    "skill_token": "ABSTAIN",
+    "s_t1": "1,2",
+    "trace_len": 1,
+    "trace_hashes": [
+      "cfcf0b383bc5ed94f322027770eb60fb7460a55473c3f200d739cf692dd0492e"
+    ]
+  },
+  "model": {
+    "used": true,
+    "p_t1": 1.0,
+    "t_ver_int_mass_hash": "eb625b50ebaf62d9abb2e018bbe813bb25de7973c1ab4c2fa4b33047f59d7e15"
+  },
+  "checks": {
+    "pre_ok": true,
+    "trace_len_ok": true,
+    "subactions_ok": true,
+    "inter_ok": true,
+    "forbid_ok": true,
+    "post_ok": true,
+    "model_ok": true
+  },
+  "verdict": "PASS"
+}

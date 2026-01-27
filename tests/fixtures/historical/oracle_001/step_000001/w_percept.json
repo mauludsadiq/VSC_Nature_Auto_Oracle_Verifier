@@ -1,0 +1,40 @@
+{
+  "schema": "contract.percept.v1",
+  "contract": {
+    "n_views": 3,
+    "agree_k": 2,
+    "require_temporal": true,
+    "require_state_format": true
+  },
+  "inputs": {
+    "observation_hash": "c784ae86d00af23974bef2ea73f731155f0b39a618bd6887df4155e6cdf11dbc",
+    "proposed_state": "1,2",
+    "prev_state": "1,2",
+    "prev_action": "MOVE_RIGHT",
+    "state_vocab_size": 3
+  },
+  "views": [
+    {
+      "view_id": 0,
+      "decoded_state": "1,2"
+    },
+    {
+      "view_id": 1,
+      "decoded_state": "1,2"
+    },
+    {
+      "view_id": 2,
+      "decoded_state": "1,2"
+    }
+  ],
+  "derived": {
+    "agree_count": 3,
+    "n_views": 3
+  },
+  "checks": {
+    "multiview_ok": true,
+    "format_ok": true,
+    "temporal_ok": true
+  },
+  "verdict": "PASS"
+}
