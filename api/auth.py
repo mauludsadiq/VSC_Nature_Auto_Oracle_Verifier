@@ -1,99 +1,102 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
+
+from fastapi import HTTPException, Request, status
+
 
 AUTH_ERROR_SCHEMA = "api.auth_error.v1"
 
-DEFAULT_ALL_SCOPES = ["read", "verify", "promote", "sign", "admin"]
 
-PUBLIC_PATHS = {
-    "/v1/health",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-}
+def _parse_keys_csv(s: str) -> List[str]:
+    return [x.strip() for x in (s or "").split(",") if x.strip()]
 
-@dataclass(frozen=True)
-class AuthConfig:
-    enabled: bool
-    keys: Set[str]
-    key_scopes: Dict[str, List[str]]
 
-def _parse_bool(s: str) -> bool:
-    return s.strip().lower() in {"1", "true", "yes", "on"}
+def _parse_scopes_map(s: str) -> Dict[str, List[str]]:
+    out: Dict[str, List[str]] = {}
+    raw = (s or "").strip()
+    if not raw:
+        return out
+    for mapping in raw.split(";"):
+        mapping = mapping.strip()
+        if not mapping or ":" not in mapping:
+            continue
+        k, scopes = mapping.split(":", 1)
+        k = k.strip()
+        if not k:
+            continue
+        out[k] = [x.strip() for x in scopes.split(",") if x.strip()]
+    return out
 
-def load_auth_config() -> AuthConfig:
-    enabled = _parse_bool(os.getenv("VSC_API_AUTH_ENABLED", "false"))
-    keys_raw = os.getenv("VSC_API_KEYS", "").strip()
-    keys = {k.strip() for k in keys_raw.split(",") if k.strip()}
 
-    scopes_raw = os.getenv("VSC_API_KEY_SCOPES", "").strip()
-    key_scopes: Dict[str, List[str]] = {}
-
-    if scopes_raw:
-        for mapping in scopes_raw.split(";"):
-            mapping = mapping.strip()
-            if not mapping:
-                continue
-            if ":" not in mapping:
-                continue
-            k, scopes = mapping.split(":", 1)
-            k = k.strip()
-            if not k:
-                continue
-            sc = [s.strip() for s in scopes.split(",") if s.strip()]
-            key_scopes[k] = sc
-
-    if keys and not key_scopes:
-        for k in keys:
-            key_scopes[k] = list(DEFAULT_ALL_SCOPES)
-
-    return AuthConfig(enabled=enabled, keys=keys, key_scopes=key_scopes)
-
-def is_public_path(path: str) -> bool:
-    if path in PUBLIC_PATHS:
-        return True
-    if path.startswith("/docs/"):
-        return True
-    return False
-
-def error_body(reason: str, detail: str = "") -> dict:
-    d = {"schema": AUTH_ERROR_SCHEMA, "ok": False, "reason": reason}
+def _error(reason: str, detail: str = "") -> Dict[str, object]:
+    d: Dict[str, object] = {"schema": AUTH_ERROR_SCHEMA, "ok": False, "reason": reason}
     if detail:
         d["detail"] = detail
     return d
 
-def parse_bearer_token(auth_header: str) -> Optional[str]:
-    if not auth_header:
+
+def _is_public_path(path: str) -> bool:
+    publics = (
+        "/v1/health",
+        "/v1/metrics",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+    )
+    for p in publics:
+        if path == p or path.startswith(p + "/"):
+            return True
+    return False
+
+
+def _auth_enabled() -> bool:
+    return (os.getenv("VSC_API_AUTH_ENABLED", "false") or "false").strip().lower() in ("1", "true", "yes", "on")
+
+
+def authenticate_request(request: Request) -> Optional[Tuple[str, List[str]]]:
+    if not _auth_enabled():
         return None
-    parts = auth_header.split(None, 1)
-    if len(parts) != 2:
+    if _is_public_path(request.url.path):
         return None
-    scheme, token = parts[0].strip(), parts[1].strip()
-    if scheme.lower() != "bearer":
-        return None
-    return token if token else None
 
-def authenticate_request(path: str, authorization: str, cfg: AuthConfig) -> Tuple[Optional[str], List[str], Optional[dict], int]:
-    if (not cfg.enabled) or is_public_path(path):
-        return None, [], None, 200
+    keys = _parse_keys_csv(os.getenv("VSC_API_KEYS", "") or "")
+    if not keys:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_error("NO_KEYS_CONFIGURED"))
 
-    token = parse_bearer_token(authorization or "")
-    if token is None:
-        return None, [], error_body("MISSING_AUTH"), 401
+    scopes_map = _parse_scopes_map(os.getenv("VSC_API_KEY_SCOPES", "") or "")
+    if not scopes_map:
+        for k in keys:
+            scopes_map[k] = ["read", "verify", "promote", "sign", "admin"]
 
-    if token not in cfg.keys:
-        return None, [], error_body("BAD_KEY"), 401
+    auth = request.headers.get("authorization", "") or request.headers.get("Authorization", "") or ""
+    auth = auth.strip()
+    if not auth:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_error("MISSING_AUTH"))
 
-    scopes = cfg.key_scopes.get(token, ["read"])
-    return token, scopes, None, 200
+    parts = auth.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_error("BAD_SCHEME"))
 
-def require_scopes(user_scopes: List[str], required: List[str]) -> bool:
-    if "admin" in user_scopes:
-        return True
-    for r in required:
-        if r not in user_scopes:
-            return False
-    return True
+    key = parts[1].strip()
+    if key not in keys:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_error("BAD_KEY"))
+
+    return key, scopes_map.get(key, ["read"])
+
+
+def require_scopes(required: List[str]):
+    def _dep(request: Request) -> None:
+        res = authenticate_request(request)
+        if res is None:
+            return
+        _, scopes = res
+        if "admin" in scopes:
+            return
+        for r in required:
+            if r not in scopes:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_error("INSUFFICIENT_SCOPE"))
+        return
+
+    return _dep

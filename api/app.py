@@ -1,25 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 
-import api.service as service
-from api.models import (
-    APIStatusResponse,
-    PromoteStepResponse,
-    SignStepResponse,
-    StreamFileResponse,
-    StreamManifestResponse,
-    VerifyHistoricalRequest,
-    VerifyHistoricalResponse,
-    VerifyRedPacketResponse,
-)
 from api.settings import APISettings
+from api.metrics import MetricsMiddleware, metrics_response
+from api.auth import require_scopes
 
-from api.auth import load_auth_config, authenticate_request, require_scopes
+import api.service as service
+
 
 settings = APISettings.from_env()
 
@@ -27,6 +18,7 @@ app = FastAPI(
     title="VSC Nature Auto Oracle Verifier API",
     version="v1",
 )
+
 
 @app.middleware("http")
 async def size_limit_middleware(request: Request, call_next):
@@ -37,55 +29,35 @@ async def size_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-AUTH_CFG = load_auth_config()
-
 @app.middleware("http")
-async def api_key_auth_middleware(request: Request, call_next):
-    try:
-        key, scopes, err, code = authenticate_request(
-            path=request.url.path,
-            authorization=request.headers.get("authorization", ""),
-            cfg=AUTH_CFG,
-        )
-        if err is not None:
-            return JSONResponse(status_code=code, content=err)
-        request.state.api_key = key
-        request.state.api_scopes = scopes
-        return await call_next(request)
-    except Exception as e:
-        return JSONResponse(status_code=401, content={"schema": "api.auth_error.v1", "ok": False, "reason": "AUTH_ERROR", "detail": str(e)})
+async def metrics_middleware(request: Request, call_next):
+    return await MetricsMiddleware()(request, call_next)
+
 
 @app.get("/v1/health")
-def health() -> Dict[str, Any]:
-    out = {
-        "schema": "api.health.v1",
-        "ok": True,
-        "host": settings.host,
-        "port": settings.port,
-    }
-    if "api_version" not in out:
-        out = service._with_api_meta(out)
-    return out
+def health():
+    return service._with_api_meta(
+        {
+            "schema": "api.health.v1",
+            "ok": True,
+            "host": settings.host,
+            "port": settings.port,
+        }
+    )
 
-@app.get("/v1/status", response_model=APIStatusResponse)
-def status() -> Dict[str, Any]:
-    out = service.api_status()
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
-    return out
 
-@app.post("/v1/verify/red-packet", response_model=VerifyRedPacketResponse)
-def verify_red_packet(payload: Dict[str, Any]) -> Dict[str, Any]:
-    red_packet = payload.get("red_packet", None)
-    if not isinstance(red_packet, dict):
-        raise HTTPException(status_code=400, detail="BAD_REQUEST missing red_packet")
-    out = service.verify_red_packet(red_packet)
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
-    return out
+@app.get("/v1/status", dependencies=[Depends(require_scopes(["read"]))])
+def status():
+    return service.api_status()
 
-@app.post("/v1/verify/step-dir")
-async def verify_step_dir(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+@app.get("/v1/metrics")
+def metrics():
+    return metrics_response()
+
+
+@app.post("/v1/verify/step-dir", dependencies=[Depends(require_scopes(["verify"]))])
+async def verify_step_dir(payload: dict):
     step_dir_raw = payload.get("step_dir", "")
     if not isinstance(step_dir_raw, str) or not step_dir_raw:
         raise HTTPException(status_code=400, detail="BAD_REQUEST missing step_dir")
@@ -109,47 +81,46 @@ async def verify_step_dir(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     return out
 
-@app.post("/v1/audit/verify-historical", response_model=VerifyHistoricalResponse)
-def verify_historical(request: Request, req: VerifyHistoricalRequest) -> Dict[str, Any]:
-    scopes = list(getattr(request.state, 'api_scopes', []) or [])
-    if not require_scopes(scopes, ['verify']):
-        return JSONResponse(status_code=403, content={'schema': 'api.auth_error.v1', 'ok': False, 'reason': 'INSUFFICIENT_SCOPE'})
-    out = service.audit_verify_historical(str(req.stream_id), int(req.step_number))
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
+
+@app.post("/v1/audit/verify-historical", dependencies=[Depends(require_scopes(["verify"]))])
+def verify_historical(req: dict):
+    try:
+        stream_id = str(req.get("stream_id") or "")
+        step_number = int(req.get("step_number") or 0)
+        out = service.audit_verify_historical(stream_id, step_number)
+        if isinstance(out, dict) and ("api_version" not in out):
+            out = service._with_api_meta(out)
+        return out
+    except Exception as e:
+        return service._with_api_meta(
+            {
+                "schema": "api.audit_verify_historical.v1",
+                "stream_id": str(req.get("stream_id") or ""),
+                "step_number": int(req.get("step_number") or 0),
+                "ok": False,
+                "reason": "EXC_" + e.__class__.__name__,
+                "merkle_root": "",
+                "root_hash_txt": "",
+                "leaf_hashes": [],
+                "same_hash": False,
+                "storage": {
+                    "backend": "filesystem",
+                    "historical_root": str(settings.historical_root),
+                    "object_prefix": "",
+                    "fetched_ok": False,
+                },
+                "signature_valid": False,
+                "ts_ms": 0,
+            }
+        )
+
+
+@app.post("/v1/stream/{stream_id}/step/{step_number}/promote", dependencies=[Depends(require_scopes(["promote"]))])
+def promote(stream_id: str, step_number: int, sign: int = 0):
+    out = service.promote_step(stream_id=str(stream_id), step_number=int(step_number), sign=bool(int(sign)))
     return out
 
-@app.post("/v1/stream/{stream_id}/step/{step_number}/promote", response_model=PromoteStepResponse)
-def promote_step(
-    stream_id: str,
-    step_number: int,
-    sign: int = Query(0),
-) -> Dict[str, Any]:
-    out = service.promote_step(stream_id=str(stream_id), step_number=int(step_number), sign=int(sign))
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
-    return out
 
-@app.post("/v1/stream/{stream_id}/step/{step_number}/sign", response_model=SignStepResponse)
-def sign_step(
-    stream_id: str,
-    step_number: int,
-) -> Dict[str, Any]:
-    out = service.sign_step(stream_id=str(stream_id), step_number=int(step_number))
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
-    return out
-
-@app.get("/v1/stream/{stream_id}", response_model=StreamManifestResponse)
-def stream_manifest(stream_id: str) -> Dict[str, Any]:
-    out = service.stream_get_manifest_or_file(stream_id=str(stream_id), rel_path=None)
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
-    return out
-
-@app.get("/v1/stream/{stream_id}/file/{rel_path:path}", response_model=StreamFileResponse)
-def stream_file(stream_id: str, rel_path: str) -> Dict[str, Any]:
-    out = service.stream_get_manifest_or_file(stream_id=str(stream_id), rel_path=str(rel_path))
-    if isinstance(out, dict) and ("api_version" not in out):
-        out = service._with_api_meta(out)
-    return out
+@app.post("/v1/stream/{stream_id}/step/{step_number}/sign", dependencies=[Depends(require_scopes(["sign"]))])
+def sign(stream_id: str, step_number: int):
+    return service.sign_step(stream_id=str(stream_id), step_number=int(step_number))
