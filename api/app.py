@@ -19,6 +19,8 @@ from api.models import (
 )
 from api.settings import APISettings
 
+from api.auth import load_auth_config, authenticate_request, require_scopes
+
 settings = APISettings.from_env()
 
 app = FastAPI(
@@ -33,6 +35,25 @@ async def size_limit_middleware(request: Request, call_next):
         return JSONResponse(status_code=413, content={"schema": "api.error.v1", "error": "BODY_TOO_LARGE"})
     request._body = body
     return await call_next(request)
+
+
+AUTH_CFG = load_auth_config()
+
+@app.middleware("http")
+async def api_key_auth_middleware(request: Request, call_next):
+    try:
+        key, scopes, err, code = authenticate_request(
+            path=request.url.path,
+            authorization=request.headers.get("authorization", ""),
+            cfg=AUTH_CFG,
+        )
+        if err is not None:
+            return JSONResponse(status_code=code, content=err)
+        request.state.api_key = key
+        request.state.api_scopes = scopes
+        return await call_next(request)
+    except Exception as e:
+        return JSONResponse(status_code=401, content={"schema": "api.auth_error.v1", "ok": False, "reason": "AUTH_ERROR", "detail": str(e)})
 
 @app.get("/v1/health")
 def health() -> Dict[str, Any]:
@@ -89,7 +110,10 @@ async def verify_step_dir(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 @app.post("/v1/audit/verify-historical", response_model=VerifyHistoricalResponse)
-def verify_historical(req: VerifyHistoricalRequest) -> Dict[str, Any]:
+def verify_historical(request: Request, req: VerifyHistoricalRequest) -> Dict[str, Any]:
+    scopes = list(getattr(request.state, 'api_scopes', []) or [])
+    if not require_scopes(scopes, ['verify']):
+        return JSONResponse(status_code=403, content={'schema': 'api.auth_error.v1', 'ok': False, 'reason': 'INSUFFICIENT_SCOPE'})
     out = service.audit_verify_historical(str(req.stream_id), int(req.step_number))
     if isinstance(out, dict) and ("api_version" not in out):
         out = service._with_api_meta(out)
