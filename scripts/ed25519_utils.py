@@ -38,3 +38,17 @@ def verify_merkle_root_sig(vk_hex: str, merkle_root_hex: str, sig_hex: str) -> b
     sig = bytes.fromhex(sig_hex)
     vk.verify(merkle_root_hex.encode("utf-8"), sig)
     return True
+
+
+def verify_sig_ed25519(msg: bytes, sig_hex: str, vk_hex: str) -> bool:
+    try:
+        if not isinstance(msg, (bytes, bytearray)):
+            msg = str(msg).encode("utf-8")
+
+        vk = VerifyKey((vk_hex or "").strip(), encoder=HexEncoder)
+        sig = bytes.fromhex((sig_hex or "").strip())
+
+        vk.verify(bytes(msg), sig)
+        return True
+    except Exception:
+        return False

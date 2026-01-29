@@ -64,7 +64,7 @@ class APISettings:
         historical_root = Path(_env_str("VSC_HISTORICAL_ROOT", "out/historical"))
         tmp_root = Path(_env_str("VSC_TMP_ROOT", "out/tmp"))
 
-        notary_on = _env_bool("VSC_NOTARY_ENABLED", False)
+        notary_on = _env_bool("VSC_NOTARY_ENABLED", False) or _env_bool("VSC_NOTARY_ON", False)
         signature_scheme = _env_str("VSC_SIGNATURE_SCHEME", "")
         ledger_pubkey_path = _env_str("VSC_LEDGER_PUBKEY_PATH", "")
         ledger_privkey_path = _env_str("VSC_LEDGER_PRIVKEY_PATH", "")
