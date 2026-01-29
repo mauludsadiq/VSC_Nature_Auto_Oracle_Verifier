@@ -5,6 +5,8 @@ import json
 import argparse
 from typing import Any, Dict, List, Optional
 
+from verifier.contract_digest_v1 import verifier_contract_digest_v1
+
 from scripts.verify_audit_chain import canon_hash, merkle_root
 from scripts.chain_root import chain_hash, genesis_root
 
@@ -41,6 +43,22 @@ def verify_step_dir(step_dir: str, require_signature: bool = False, verify_chain
         return {"ok": False, "reason": "MISSING_BUNDLE_JSON", "step_dir": step_dir}
 
     bundle = load_json(bundle_path)
+    bundle_schema_version = str(bundle.get("bundle_schema_version", "") or "")
+    verifier_contract_digest = str(bundle.get("verifier_contract_digest", "") or "")
+    if bundle_schema_version == "v1":
+        if not verifier_contract_digest:
+            return {"ok": False, "reason": "MISSING_VERIFIER_CONTRACT_DIGEST", "step_dir": step_dir}
+        expected = verifier_contract_digest_v1()
+        if verifier_contract_digest.strip() != expected.strip():
+            return {"ok": False, "reason": "BAD_VERIFIER_CONTRACT_DIGEST", "step_dir": step_dir}
+    bundle_schema_version = str(bundle.get("bundle_schema_version", "") or "")
+    verifier_contract_digest = str(bundle.get("verifier_contract_digest", "") or "")
+    if bundle_schema_version == "v1":
+        if not verifier_contract_digest:
+            return {"ok": False, "reason": "MISSING_VERIFIER_CONTRACT_DIGEST", "step_dir": step_dir}
+        expected = verifier_contract_digest_v1()
+        if verifier_contract_digest.strip() != expected.strip():
+            return {"ok": False, "reason": "BAD_VERIFIER_CONTRACT_DIGEST", "step_dir": step_dir}
 
     root_bundle = bundle.get("merkle_root")
     if root_bundle is None or not isinstance(root_bundle, str):

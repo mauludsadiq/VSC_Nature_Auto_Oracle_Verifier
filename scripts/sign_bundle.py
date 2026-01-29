@@ -4,6 +4,8 @@ import sys
 import json
 from typing import Any, Dict, List
 
+from verifier.contract_digest_v1 import verifier_contract_digest_v1
+
 from scripts.ed25519_utils import load_or_create_keypair, sign_merkle_root
 
 
@@ -24,6 +26,8 @@ def sign_step_dir(step_dir: str, key_dir: str = "out/keys") -> Dict[str, Any]:
         raise FileNotFoundError(bundle_path)
 
     bundle = load_json(bundle_path)
+    bundle.setdefault("bundle_schema_version", "v1")
+    bundle.setdefault("verifier_contract_digest", verifier_contract_digest_v1())
     root = bundle.get("merkle_root")
     if root is None or not isinstance(root, str):
         return {"ok": False, "reason": "BUNDLE_MISSING_MERKLE_ROOT", "step_dir": step_dir}

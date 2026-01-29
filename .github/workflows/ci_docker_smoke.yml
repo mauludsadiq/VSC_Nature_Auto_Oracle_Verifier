@@ -23,6 +23,6 @@ jobs:
           test "${PIPESTATUS[0]}" = "0"
 
           grep -n "^SMOKE_PASS$" out/docker_smoke.log
-          grep -n "^PASS_API_STATUS notary_on=1 scheme=ed25519.v1$" out/docker_smoke.log
+          grep -n "^PASS_API_STATUS notary_on=1 scheme=ed25519.v1 api=v1 contracts=" out/docker_smoke.log
           grep -n "^PASS_API_SIGN_STEP stream_id=oracle_001 step=1 scheme=ed25519.v1$" out/docker_smoke.log
           grep -n "^PASS_API_VERIFY_HISTORICAL_SIGNATURE stream_id=oracle_001 step=1 scheme=ed25519.v1$" out/docker_smoke.log

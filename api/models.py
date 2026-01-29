@@ -3,8 +3,26 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+from api.versioning import build_meta
 
-class _Base(BaseModel):
+
+
+class BaseAPIResponse(BaseModel):
+    api_version: str
+    repo_version: str
+    build_git_sha: str
+
+    @classmethod
+    def with_meta(cls, **kwargs):
+        m = build_meta()
+        return cls(
+            api_version=m.api_version,
+            repo_version=m.repo_version,
+            build_git_sha=m.build_git_sha,
+            **kwargs,
+        )
+
+class _Base(BaseAPIResponse):
     class Config:
         allow_population_by_field_name = True
         extra = "allow"
@@ -46,7 +64,7 @@ class VerifyHistoricalRequest(BaseModel):
     step_number: int
 
 
-class VerifyHistoricalResponse(BaseModel):
+class VerifyHistoricalResponse(BaseAPIResponse):
     schema: str
     stream_id: str
     step_number: int
@@ -66,7 +84,7 @@ class VerifyHistoricalResponse(BaseModel):
 
 
 
-class VerifyRedPacketResponse(BaseModel):
+class VerifyRedPacketResponse(BaseAPIResponse):
     schema: str = "api.verify_red_packet.v1"
     ok: bool
     reason: str
@@ -77,7 +95,7 @@ class VerifyRedPacketResponse(BaseModel):
     ts_ms: int
 
 
-class APIStatusResponse(BaseModel):
+class APIStatusResponse(BaseAPIResponse):
     schema: str = "api.status.v1"
     ok: bool
     host: str
@@ -96,7 +114,7 @@ class StreamManifestEntry(BaseModel):
     sha256: str
 
 
-class StreamManifestResponse(BaseModel):
+class StreamManifestResponse(BaseAPIResponse):
     schema: str = "api.stream_manifest.v1"
     stream_id: str
     step_number: int
@@ -107,7 +125,7 @@ class StreamManifestResponse(BaseModel):
     ts_ms: int
 
 
-class StreamFileResponse(BaseModel):
+class StreamFileResponse(BaseAPIResponse):
     schema: str = "api.stream_file.v1"
     stream_id: str
     step_number: int
@@ -121,7 +139,7 @@ class StreamFileResponse(BaseModel):
     ts_ms: int
 
 
-class PromoteStepResponse(BaseModel):
+class PromoteStepResponse(BaseAPIResponse):
     schema: str = "api.promote_step.v1"
     stream_id: str
     step_number: int
@@ -134,7 +152,7 @@ class PromoteStepResponse(BaseModel):
     ts_ms: int
 
 
-class SignStepResponse(BaseModel):
+class SignStepResponse(BaseAPIResponse):
     schema: str = "api.sign_step.v1"
     stream_id: str
     step_number: int

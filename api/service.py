@@ -1,7 +1,19 @@
 from __future__ import annotations
+from verifier.contract_digest_v1 import verifier_contract_digest_v1
 
 import json
 import time
+
+from api.versioning import build_meta
+
+def _with_api_meta(d: dict) -> dict:
+    m = build_meta()
+    d = dict(d)
+    d["api_version"] = m.api_version
+    d["repo_version"] = m.repo_version
+    d["build_git_sha"] = m.build_git_sha
+    return d
+
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -76,7 +88,7 @@ def replay_verify_step_dir(step_dir: Path) -> Dict[str, Any]:
 
 
 
-    return {
+    return _with_api_meta({
         "schema": "api.replay_verify_step.v1",
         "step_dir": step_dir_s,
         "ok": bool(ok),
@@ -85,7 +97,7 @@ def replay_verify_step_dir(step_dir: Path) -> Dict[str, Any]:
         "leaf_hashes": leaf_hashes,
         "root_hash_txt": str(root_hash_txt or ""),
         "ts_ms": int(time.time() * 1000),
-    }
+    })
 
 def _historical_step_dir(stream_id: str, step_number: int) -> Path:
     import os
@@ -104,7 +116,7 @@ def audit_verify_historical(stream_id: str, step_number: int) -> dict:
     object_prefix = f"{stream_id}/step_{int(step_number):06d}/"
 
     if not step_dir.exists():
-        return {
+        return _with_api_meta({
             "schema": "api.audit_verify_historical.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -122,7 +134,7 @@ def audit_verify_historical(stream_id: str, step_number: int) -> dict:
             },
             "signature_valid": False,
             "ts_ms": int(time.time() * 1000),
-        }
+        })
 
     out = _verify_step_dir_disk(step_dir)
 
@@ -181,32 +193,32 @@ def _verify_step_dir_disk(step_dir: Path) -> dict:
     out = _verify_step_dir(str(step_dir))
     if isinstance(out, dict):
         return out
-    return {"ok": False, "reason": "VERIFY_STEP_DIR_BAD_RETURN", "merkle_root": "", "leaf_hashes": [], "step_dir": str(step_dir)}
+    return _with_api_meta({"ok": False, "reason": "VERIFY_STEP_DIR_BAD_RETURN", "merkle_root": "", "leaf_hashes": [], "step_dir": str(step_dir)})
 
 def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path, scheme: str) -> dict:
     signature_valid = False
     pubkey_path = Path(pubkey_path)
     sig_path = step_dir / "root.sig"
     if not sig_path.exists():
-        return {"signature_valid": False, "reason": "NO_SIGNATURE"}
+        return _with_api_meta({"signature_valid": False, "reason": "NO_SIGNATURE"})
 
     if not root_hash_txt:
-        return {"signature_valid": False, "reason": "NO_ROOT_HASH"}
+        return _with_api_meta({"signature_valid": False, "reason": "NO_ROOT_HASH"})
 
     sig_raw = ""
     try:
         sig_raw = _read_text(sig_path).strip()
     except Exception:
-        return {"signature_valid": False, "reason": "SIG_READ_FAIL"}
+        return _with_api_meta({"signature_valid": False, "reason": "SIG_READ_FAIL"})
 
     sig_bytes = b""
     try:
         sig_bytes = bytes.fromhex(sig_raw)
     except Exception:
-        return {"signature_valid": False, "reason": "SIG_PARSE_FAIL"}
+        return _with_api_meta({"signature_valid": False, "reason": "SIG_PARSE_FAIL"})
 
     if not pubkey_path.exists():
-        return {"signature_valid": False, "reason": "NO_PUBKEY"}
+        return _with_api_meta({"signature_valid": False, "reason": "NO_PUBKEY"})
 
     pub_bytes = b""
     pub_text = ""
@@ -218,7 +230,7 @@ def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path
     msg = root_hash_txt.strip().encode("utf-8")
 
     if scheme != "ed25519.v1":
-        return {"signature_valid": False, "reason": "UNSUPPORTED_SCHEME"}
+        return _with_api_meta({"signature_valid": False, "reason": "UNSUPPORTED_SCHEME"})
 
     # Try cryptography (preferred)
     try:
@@ -228,12 +240,12 @@ def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path
         if pub_text.startswith("-----BEGIN"):
             pk = serialization.load_pem_public_key(pub_text.encode("utf-8"))
             pk.verify(sig_bytes, msg)
-            return {"signature_valid": True, "reason": "OK"}
+            return _with_api_meta({"signature_valid": True, "reason": "OK"})
         else:
             pub_bytes = bytes.fromhex(pub_text)
             pk = Ed25519PublicKey.from_public_bytes(pub_bytes)
             pk.verify(sig_bytes, msg)
-            return {"signature_valid": True, "reason": "OK"}
+            return _with_api_meta({"signature_valid": True, "reason": "OK"})
     except Exception:
         pass
 
@@ -242,13 +254,13 @@ def _verify_root_signature(step_dir: Path, root_hash_txt: str, pubkey_path: Path
         from nacl.signing import VerifyKey
 
         if pub_text.startswith("-----BEGIN"):
-            return {"signature_valid": False, "reason": "PEM_UNSUPPORTED_NO_CRYPTO"}
+            return _with_api_meta({"signature_valid": False, "reason": "PEM_UNSUPPORTED_NO_CRYPTO"})
         pub_bytes = bytes.fromhex(pub_text)
         vk = VerifyKey(pub_bytes)
         vk.verify(msg, sig_bytes)
-        return {"signature_valid": True, "reason": "OK"}
+        return _with_api_meta({"signature_valid": True, "reason": "OK"})
     except Exception:
-        return {"signature_valid": False, "reason": "VERIFY_FAIL"}
+        return _with_api_meta({"signature_valid": False, "reason": "VERIFY_FAIL"})
 
 
 
@@ -346,7 +358,7 @@ def api_status() -> Dict[str, Any]:
         "ledger_pubkey_path": effective_pubkey_path,
         "ts_ms": int(time.time() * 1000),
     }
-    print(f"PASS_API_STATUS notary_on={int(notary_on)} scheme={(effective_scheme or 'OFF')}")
+    print(f"PASS_API_STATUS notary_on={int(notary_on)} scheme={scheme} api={build_meta().api_version} contracts={verifier_contract_digest_v1(Path.cwd())}")
     return out
 
 def verify_red_packet(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -637,7 +649,7 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
     step_dir = settings.historical_root / str(stream_id) / f"step_{int(step_number):06d}"
 
     if not step_dir.exists() or not step_dir.is_dir():
-        return {
+        return _with_api_meta({
             "schema": "api.sign_step.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -647,11 +659,11 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
             "signed": False,
             "signature_scheme": str(settings.signature_scheme or ""),
             "ts_ms": int(time.time() * 1000),
-        }
+        })
 
     sig_path = step_dir / "root.sig"
     if sig_path.exists():
-        return {
+        return _with_api_meta({
             "schema": "api.sign_step.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -661,14 +673,14 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
             "signed": True,
             "signature_scheme": str(settings.signature_scheme or ""),
             "ts_ms": int(time.time() * 1000),
-        }
+        })
 
     scheme = str(settings.signature_scheme or "")
     pk_path = Path(str(settings.ledger_pubkey_path or "")).expanduser()
     sk_path = pk_path.parent / "ledger_privkey.hex"
 
     if scheme != "ed25519.v1":
-        return {
+        return _with_api_meta({
             "schema": "api.sign_step.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -678,10 +690,10 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
             "signed": False,
             "signature_scheme": scheme,
             "ts_ms": int(time.time() * 1000),
-        }
+        })
 
     if not sk_path.exists():
-        return {
+        return _with_api_meta({
             "schema": "api.sign_step.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -691,7 +703,7 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
             "signed": False,
             "signature_scheme": scheme,
             "ts_ms": int(time.time() * 1000),
-        }
+        })
 
     root_hash_txt = ""
     try:
@@ -700,7 +712,7 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
         root_hash_txt = ""
 
     if not root_hash_txt:
-        return {
+        return _with_api_meta({
             "schema": "api.sign_step.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -710,13 +722,13 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
             "signed": False,
             "signature_scheme": scheme,
             "ts_ms": int(time.time() * 1000),
-        }
+        })
     sk_hex = _read_text(sk_path).strip()
     msg = root_hash_txt.encode("utf-8")
     try:
         sig_hex = _sign_ed25519_v1(msg, sk_hex)
     except Exception as e:
-        return {
+        return _with_api_meta({
             "schema": "api.sign_step.v1",
             "stream_id": str(stream_id),
             "step_number": int(step_number),
@@ -726,12 +738,12 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
             "signed": False,
             "signature_scheme": scheme,
             "ts_ms": int(time.time() * 1000),
-        }
+        })
 
     sig_path.write_text(sig_hex + "\n", encoding="utf-8")
 
     print(f"PASS_API_SIGN_STEP stream_id={stream_id} step={int(step_number)} scheme={scheme}")
-    return {
+    return _with_api_meta({
         "schema": "api.sign_step.v1",
         "stream_id": str(stream_id),
         "step_number": int(step_number),
@@ -741,4 +753,4 @@ def sign_step(stream_id: str, step_number: int) -> Dict[str, Any]:
         "signed": True,
         "signature_scheme": scheme,
         "ts_ms": int(time.time() * 1000),
-    }
+    })

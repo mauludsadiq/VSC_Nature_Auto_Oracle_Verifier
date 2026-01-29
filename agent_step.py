@@ -1,3 +1,4 @@
+from verifier.contract_digest_v1 import verifier_contract_digest_v1
 import json, hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -201,6 +202,10 @@ def execute_agent_step(
     (output_dir / "root_hash.txt").write_text(root + "\n", encoding="utf-8")
 
     bundle = {
+
+    "bundle_schema_version": "v1",
+    "verifier_contract_digest": verifier_contract_digest_v1(Path(__file__).resolve().parents[1]),
+
         "schema": "agent_step.bundle.v1",
         "step_counter": step_counter,
         "input_state": s_t,

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from api.models import VerifyHistoricalRequest, VerifyHistoricalResponse, PromoteStepResponse, SignStepResponse
-
-from api.service import replay_verify_step_dir, audit_verify_historical, api_status, verify_red_packet, stream_get_manifest_or_file, promote_step, promote_step, sign_step
-from api.models import APIStatusResponse, StreamFileResponse, StreamManifestResponse, VerifyRedPacketResponse
+import api.service as service
+from api.models import (
+    APIStatusResponse,
+    PromoteStepResponse,
+    SignStepResponse,
+    StreamFileResponse,
+    StreamManifestResponse,
+    VerifyHistoricalRequest,
+    VerifyHistoricalResponse,
+    VerifyRedPacketResponse,
+)
 from api.settings import APISettings
 
 settings = APISettings.from_env()
@@ -18,7 +26,6 @@ app = FastAPI(
     version="v1",
 )
 
-
 @app.middleware("http")
 async def size_limit_middleware(request: Request, call_next):
     body = await request.body()
@@ -27,19 +34,37 @@ async def size_limit_middleware(request: Request, call_next):
     request._body = body
     return await call_next(request)
 
-
 @app.get("/v1/health")
-def health():
-    return {
+def health() -> Dict[str, Any]:
+    out = {
         "schema": "api.health.v1",
         "ok": True,
         "host": settings.host,
         "port": settings.port,
     }
+    if "api_version" not in out:
+        out = service._with_api_meta(out)
+    return out
 
+@app.get("/v1/status", response_model=APIStatusResponse)
+def status() -> Dict[str, Any]:
+    out = service.api_status()
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
+    return out
+
+@app.post("/v1/verify/red-packet", response_model=VerifyRedPacketResponse)
+def verify_red_packet(payload: Dict[str, Any]) -> Dict[str, Any]:
+    red_packet = payload.get("red_packet", None)
+    if not isinstance(red_packet, dict):
+        raise HTTPException(status_code=400, detail="BAD_REQUEST missing red_packet")
+    out = service.verify_red_packet(red_packet)
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
+    return out
 
 @app.post("/v1/verify/step-dir")
-async def verify_step_dir(payload: dict):
+async def verify_step_dir(payload: Dict[str, Any]) -> Dict[str, Any]:
     step_dir_raw = payload.get("step_dir", "")
     if not isinstance(step_dir_raw, str) or not step_dir_raw:
         raise HTTPException(status_code=400, detail="BAD_REQUEST missing step_dir")
@@ -49,7 +74,7 @@ async def verify_step_dir(payload: dict):
         raise HTTPException(status_code=404, detail="NOT_FOUND step_dir does not exist")
 
     try:
-        out = replay_verify_step_dir(step_dir)
+        out = service.replay_verify_step_dir(step_dir)
     except Exception as e:
         msg = f"INTERNAL_ERROR {type(e).__name__} {str(e)}"
         print(f"FAIL_API_VERIFY_STEP step_dir={step_dir_raw}")
@@ -62,40 +87,45 @@ async def verify_step_dir(payload: dict):
         print(f"FAIL_API_VERIFY_STEP step_dir={step_dir_raw}")
 
     return out
+
 @app.post("/v1/audit/verify-historical", response_model=VerifyHistoricalResponse)
-async def verify_historical(req: VerifyHistoricalRequest):
-    out = audit_verify_historical(req.stream_id, req.step_number)
-
-    if bool(out.get("ok", False)):
-        print(f'PASS_API_VERIFY_HISTORICAL stream_id={req.stream_id} step={int(req.step_number)}')
-    else:
-        print(f'FAIL_API_VERIFY_HISTORICAL stream_id={req.stream_id} step={int(req.step_number)} reason={out.get("reason","")}')
-
+def verify_historical(req: VerifyHistoricalRequest) -> Dict[str, Any]:
+    out = service.audit_verify_historical(str(req.stream_id), int(req.step_number))
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
     return out
 
-
-@app.get("/v1/status", response_model=APIStatusResponse)
-def status():
-    return api_status()
-
-
-@app.post("/v1/verify/red-packet", response_model=VerifyRedPacketResponse)
-async def verify_red_packet_endpoint(payload: dict):
-    return verify_red_packet(payload)
-
-
-@app.get("/v1/stream/{stream_id}/step/{k}/manifest", response_model=None)
-def stream_manifest_endpoint(stream_id: str, k: int, file: str = ""):
-    out = stream_get_manifest_or_file(stream_id, int(k), str(file or ""))
+@app.post("/v1/stream/{stream_id}/step/{step_number}/promote", response_model=PromoteStepResponse)
+def promote_step(
+    stream_id: str,
+    step_number: int,
+    sign: int = Query(0),
+) -> Dict[str, Any]:
+    out = service.promote_step(stream_id=str(stream_id), step_number=int(step_number), sign=int(sign))
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
     return out
 
+@app.post("/v1/stream/{stream_id}/step/{step_number}/sign", response_model=SignStepResponse)
+def sign_step(
+    stream_id: str,
+    step_number: int,
+) -> Dict[str, Any]:
+    out = service.sign_step(stream_id=str(stream_id), step_number=int(step_number))
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
+    return out
 
-@app.post("/v1/stream/{stream_id}/step/{k}/promote")
-def promote_step_endpoint(stream_id: str, k: int, sign: int = 0):
-    sign_flag = bool(int(sign))
-    return promote_step(stream_id=stream_id, step_number=int(k), sign=sign_flag)
+@app.get("/v1/stream/{stream_id}", response_model=StreamManifestResponse)
+def stream_manifest(stream_id: str) -> Dict[str, Any]:
+    out = service.stream_get_manifest_or_file(stream_id=str(stream_id), rel_path=None)
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
+    return out
 
-
-@app.post("/v1/stream/{stream_id}/step/{k}/sign", response_model=SignStepResponse)
-async def sign_step_endpoint(stream_id: str, k: int):
-    return sign_step(stream_id=stream_id, step_number=int(k))
+@app.get("/v1/stream/{stream_id}/file/{rel_path:path}", response_model=StreamFileResponse)
+def stream_file(stream_id: str, rel_path: str) -> Dict[str, Any]:
+    out = service.stream_get_manifest_or_file(stream_id=str(stream_id), rel_path=str(rel_path))
+    if isinstance(out, dict) and ("api_version" not in out):
+        out = service._with_api_meta(out)
+    return out
