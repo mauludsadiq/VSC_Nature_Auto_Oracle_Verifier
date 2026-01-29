@@ -18,14 +18,26 @@ jobs:
         shell: bash
         run: |
           mkdir -p out
-          docker run --rm -t \
+
+          docker run --rm \
             -e VSC_NOTARY_ENABLED=1 \
             -e VSC_NOTARY_ON=1 \
             -e VSC_LEDGER_PUBKEY_PATH=/app/keys/ledger_pubkey.hex \
             -e VSC_LEDGER_PRIVKEY_PATH=/app/keys/ledger_privkey.hex \
-            vsc_oracle_verifier:ci 2>&1 | tee out/docker_smoke.log
-          test "${PIPESTATUS[0]}" = "0"
-          grep -n "^SMOKE_PASS$" out/docker_smoke.log
-          grep -n "^PASS_API_STATUS notary_on=1 scheme=ed25519.v1 api=v1 contracts=" out/docker_smoke.log
-          grep -n "^PASS_API_SIGN_STEP stream_id=oracle_001 step=1 scheme=ed25519.v1$" out/docker_smoke.log
-          grep -n "^PASS_API_VERIFY_HISTORICAL_SIGNATURE stream_id=oracle_001 step=1 scheme=ed25519.v1$" out/docker_smoke.log
+            vsc_oracle_verifier:ci > out/docker_smoke.raw.log 2>&1
+
+          perl -pe 's/\r//g; s/\e\[[0-9;]*[A-Za-z]//g' out/docker_smoke.raw.log > out/docker_smoke.log
+
+          cat out/docker_smoke.log
+
+          grep -nF "SMOKE_PASS" out/docker_smoke.log
+          grep -nF "PASS_API_STATUS notary_on=1 scheme=ed25519.v1 api=v1 contracts=" out/docker_smoke.log
+          grep -nF "PASS_API_SIGN_STEP stream_id=oracle_001 step=1 scheme=ed25519.v1" out/docker_smoke.log
+          grep -nF "PASS_API_VERIFY_HISTORICAL_SIGNATURE stream_id=oracle_001 step=1 scheme=ed25519.v1" out/docker_smoke.log
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-smoke-logs
+          path: out/*.log
