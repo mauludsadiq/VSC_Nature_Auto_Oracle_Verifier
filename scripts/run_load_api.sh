@@ -1,42 +1,39 @@
-#!/bin/bash
+#!/bin/sh
 
-cd "$(git rev-parse --show-toplevel)"
-
+API_KEY="${API_KEY:-}"
 HOST="${HOST:-127.0.0.1}"
-PORT="${PORT:-8011}"
+PORT="${PORT:-8001}"
+CONCURRENCY="${CONCURRENCY:-200}"
+REQUESTS="${REQUESTS:-2000}"
+TIMEOUT_S="${TIMEOUT_S:-30}"
+MIX="${MIX:-health,status,metrics}"
+VERIFY_STEP_DIR="${VERIFY_STEP_DIR:-}"
+OUT="${OUT:-out/load/load_report.json}"
+
 BASE="http://${HOST}:${PORT}"
 
-API_KEY="${API_KEY:-ci_key}"
-CONCURRENCY="${CONCURRENCY:-1000}"
-REQUESTS="${REQUESTS:-20000}"
+i=0
+code="000"
+while [ $i -lt 60 ]; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/v1/health" 2>/dev/null || echo 000)"
+  if [ "$code" = "200" ]; then
+    break
+  fi
+  i=$((i+1))
+  sleep 0.2
+done
 
-export VSC_API_AUTH_ENABLED="${VSC_API_AUTH_ENABLED:-true}"
-export VSC_API_KEYS="${VSC_API_KEYS:-ci_key}"
-export VSC_API_KEY_SCOPES="${VSC_API_KEY_SCOPES:-ci_key:read,verify,promote,sign,admin}"
+if [ "$code" != "200" ]; then
+  echo "LOAD_PREFLIGHT_FAIL base=${BASE} last_http_code=${code}" 1>&2
+  exit 1
+fi
 
-LOG="out/load/api_server.log"
-mkdir -p out/load
-
-python3 -m uvicorn api.app:app --host "${HOST}" --port "${PORT}" > "${LOG}" 2>&1 &
-PID=$!
-
-python3 - <<'PY'
-import time, sys, urllib.request
-base = sys.argv[1]
-for _ in range(60):
-    try:
-        with urllib.request.urlopen(base + "/v1/health", timeout=1.0) as r:
-            if r.status == 200:
-                sys.exit(0)
-    except Exception:
-        pass
-    time.sleep(0.2)
-sys.exit(2)
-PY "${BASE}"
-
-python3 -m scripts.load_api --base "${BASE}" --api-key "${API_KEY}" --concurrency "${CONCURRENCY}" --requests "${REQUESTS}" --out out/load/load_report.json
-
-kill "${PID}" >/dev/null 2>&1 || true
-wait "${PID}" >/dev/null 2>&1 || true
-
-grep -n "^PASS_API_STATUS " "${LOG}" | tail -5 || true
+python3 -m scripts.load_api \
+  --base "${BASE}" \
+  --api-key "${API_KEY}" \
+  --concurrency "${CONCURRENCY}" \
+  --requests "${REQUESTS}" \
+  --timeout-s "${TIMEOUT_S}" \
+  --mix "${MIX}" \
+  --verify-step-dir "${VERIFY_STEP_DIR}" \
+  --out "${OUT}"

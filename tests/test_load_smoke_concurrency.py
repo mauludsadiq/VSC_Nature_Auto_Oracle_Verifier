@@ -1,32 +1,33 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
 from pathlib import Path
-from urllib.request import urlopen
 
 
-def _wait_ok(url: str, timeout_s: float = 10.0) -> None:
+def _wait_for_health(base: str, timeout_s: float = 10.0) -> None:
     t0 = time.time()
     while True:
         try:
-            with urlopen(url, timeout=1.0) as r:
-                if r.status == 200:
-                    return
+            out = subprocess.check_output(["curl", "-fsS", f"{base}/v1/health"], text=True, stderr=subprocess.DEVNULL)
+            j = json.loads(out)
+            if bool(j.get("ok", False)) is True:
+                return
         except Exception:
             pass
         if time.time() - t0 > timeout_s:
-            raise RuntimeError("timeout waiting for " + url)
-        time.sleep(0.2)
+            raise AssertionError("health did not become ok")
+        time.sleep(0.1)
 
 
-def test_load_smoke_concurrency_ci(tmp_path):
+def test_load_smoke_concurrency(tmp_path: Path) -> None:
     repo = Path(__file__).resolve().parents[1]
     os.chdir(str(repo))
 
     host = "127.0.0.1"
-    port = 8013
+    port = 8022
     base = f"http://{host}:{port}"
     log_path = tmp_path / "api_server.log"
 
@@ -44,31 +45,43 @@ def test_load_smoke_concurrency_ci(tmp_path):
     )
 
     try:
-        _wait_ok(f"{base}/v1/health", timeout_s=12.0)
+        _wait_for_health(base, timeout_s=12.0)
 
-        out = subprocess.check_output(
+        out_report = repo / "out" / "load" / "load_report_ci.json"
+        if out_report.exists():
+            out_report.unlink()
+
+        subprocess.run(
             [
-                "python3",
-                "-m",
-                "scripts.load_api",
-                "--base",
-                base,
-                "--api-key",
-                "ci_key",
-                "--concurrency",
-                "80",
-                "--requests",
-                "800",
-                "--out",
-                str(tmp_path / "load_report.json"),
+                "sh",
+                "scripts/run_load_api.sh",
             ],
-            cwd=str(repo),
-        ).decode("utf-8", errors="ignore")
+            check=True,
+            env=dict(
+                os.environ,
+                API_KEY="ci_key",
+                HOST=host,
+                PORT=str(port),
+                CONCURRENCY="200",
+                REQUESTS="2000",
+                TIMEOUT_S="15",
+                MIX="health,status,metrics",
+                OUT=str(out_report),
+            ),
+        )
 
-        assert '"schema": "load.report.v1"' in out
-        assert '"ok_rate"' in out
-        assert '"status_counts"' in out
-        assert '"200"' in out
+        assert out_report.exists()
+        rep = json.loads(out_report.read_text(encoding="utf-8"))
+
+        codes = rep.get("http_codes", {})
+        assert isinstance(codes, dict)
+
+        # CI assertion surface: we do not allow code "0" in the CI smoke.
+        assert str(codes.get("0", 0)) in ("0", 0)
+
+        # sanity: expect some 200s
+        assert int(codes.get("200", 0)) > 0
+
     finally:
         p.terminate()
         try:
