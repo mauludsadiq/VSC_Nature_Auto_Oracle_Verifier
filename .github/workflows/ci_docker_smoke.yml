@@ -19,7 +19,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p out
-          docker run --rm -t vsc_oracle_verifier:ci 2>&1 | tee out/docker_smoke.log
+          docker run --rm -t \
+  -e VSC_NOTARY_ENABLED=1 \
+  -e VSC_NOTARY_ON=1 \
+  -e VSC_LEDGER_PUBKEY_PATH=/app/keys/ledger_pubkey.hex \
+  -e VSC_LEDGER_PRIVKEY_PATH=/app/keys/ledger_privkey.hex \
+  vsc_oracle_verifier:ci 2>&1 | tee out/docker_smoke.log
           test "${PIPESTATUS[0]}" = "0"
 
           grep -n "^SMOKE_PASS$" out/docker_smoke.log
